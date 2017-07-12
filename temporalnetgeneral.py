@@ -8,7 +8,6 @@ Created on Tue Jan 17 11:08:21 2017
 from __future__ import print_function
 import sys
 #import caffe
-sys.path.insert(0, './keras-Spatial-Transformer-Layer/')
 sys.path.insert(0, '/home/adrian/caffe/python')
 import numpy as np
 import matplotlib
@@ -1258,7 +1257,7 @@ def main(learning_rate, batch_size, dropout, batch_norm, weight_0, weight_1, nb_
     sys.exit()
         
 if __name__ == '__main__':
-    parameter_file = '/home/anunez/project/experimentos_caidas.json'
+    parameter_file = '/home/anunez/project/fall_experiments.json'
     with open(parameter_file) as data_file:    
         param = json.load(data_file)
         
