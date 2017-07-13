@@ -156,21 +156,19 @@ def saveFeatures(feature_extractor, features_file, labels_file):
     h5features.close()
     h5labels.close()
 
-def main(learning_rate, batch_size, batch_norm, weight_0, epochs, model_file, weights_file): 
+def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_file, weights_file): 
     exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, w0)
-    best_model = 'best_weights_{}.hdf5'.format(exp)
     vgg_16_weights = 'weights.h5'
     balance_dataset = True
     save_plots = True
     num_features = 4096
     features_file = 'features_fdd.h5'
     labels_file = 'labels_fdd.h5'
-    save_features = False
+    save_features = True
 
     # =============================================================================================================
     # VGG-16 ARCHITECTURE
     # =============================================================================================================
-         
     model = Sequential()
     
     model.add(ZeroPadding2D((1, 1), input_shape=(20, 224, 224)))
@@ -250,6 +248,7 @@ def main(learning_rate, batch_size, batch_norm, weight_0, epochs, model_file, we
     # =============================================================================================================
     do_training = True   
     compute_metrics = True
+    threshold = 0.5
     
     if do_training:
         h5features = h5py.File(features_file, 'r')
@@ -333,7 +332,6 @@ def main(learning_rate, batch_size, batch_norm, weight_0, epochs, model_file, we
 
             # ==================== EVALUATION ========================        
             if compute_metrics:
-               threshold = 0.5
                predicted = classifier.predict(np.asarray(X2))
                for i in range(len(predicted)):
                    if predicted[i] < threshold:
@@ -372,8 +370,12 @@ def main(learning_rate, batch_size, batch_norm, weight_0, epochs, model_file, we
         print("Accuracy: %.2f%% (+/- %.2f%%)" % (np.mean(accuracies), np.std(accuracies)))
         
 if __name__ == '__main__':
-    model_file = '/home/anunez/project/models/exp_'
-    weights_file = '/home/anunez/project/weights/exp_'
+    if not os.path.exists('models'):
+        os.makedirs('models')
+    if not os.path.exists('weights'):
+        os.makedirs('weights')
+    model_file = 'models/exp_'
+    weights_file = 'weights/exp_'
     batch_norm = True
     learning_rate = 0.001
     mini_batch_size = 0
