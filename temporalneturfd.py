@@ -165,7 +165,7 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
     num_features = 4096
     features_file = 'features_urfd.h5'
     labels_file = 'labels_urfd.h5'
-    save_features = False
+    save_features = True
 
     # =============================================================================================================
     # VGG-16 ARCHITECTURE

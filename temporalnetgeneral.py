@@ -1,40 +1,24 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Jan 17 11:08:21 2017
-
-@author: adrian
-"""
-
 from __future__ import print_function
+from numpy.random import seed
+seed(1)
 import sys
-#import caffe
-sys.path.insert(0, '/home/adrian/caffe/python')
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import os
-import time
-import urllib2
-from zipfile import ZipFile
 from PIL import Image
 import io
 from sklearn.model_selection import StratifiedShuffleSplit
-from functions import load_gazeplus_dataset, load_adl_dataset, load_model, save_model, createGenerator
-#from keras.applications.vgg16 import VGG16
 from vgg16module import VGG16
-from keras.applications.resnet50 import ResNet50
 
 from keras.models import Model, model_from_json, model_from_yaml, Sequential
 from keras.layers import Input, Convolution2D, MaxPooling2D, LSTM, Reshape, Merge, TimeDistributed, Flatten, Activation, Dense, Dropout, merge, AveragePooling2D, ZeroPadding2D, Lambda
-from keras.regularizers import l2, activity_l2
 from keras.optimizers import Adam, SGD
 from keras.layers.normalization import BatchNormalization 
 from keras import backend as K
 K.set_image_dim_ordering('th')
-#from attention import SpatialTransformer
 from keras.utils import np_utils
-from keras.utils.np_utils import probas_to_classes
 from sklearn.metrics import confusion_matrix, accuracy_score
 from skimage.io import imsave
 from keras.callbacks import Callback, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, LearningRateScheduler
@@ -42,7 +26,6 @@ from keras.utils.np_utils import to_categorical
 import json
 from scipy.ndimage import minimum, maximum, imread
 import math
-from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy.ma as ma
 import matplotlib.cm as cm
 import h5py
@@ -56,71 +39,9 @@ from scipy.stats import mode
 from collections import Counter
 from sklearn import svm
 from sklearn.metrics import roc_curve, auc
-
+from sklearn.model_selection import KFold
 from keras.layers.advanced_activations import ELU
-#import transcaffe as tc
 
-def global_average_pooling(x):
-    return K.mean(x, axis = (2, 3))
-
-def global_average_pooling_shape(input_shape):
-    return input_shape[0:2]
-
-def get_caffe_params(netname, paramname):
-   net = caffe.Net(netname, paramname, caffe.TEST)
-   net.save_hdf5('/home/adrian/project/caffedata.h5')
-   params = OrderedDict()
-   for layername in net.params:
-      caffelayer = net.params[layername]
-      params[layername] = []
-      for sublayer in caffelayer:
-         params[layername].append(sublayer.data)
-      print("layer " +layername+ " has " +str(len(caffelayer))+ " sublayers, shape "+str(params[layername][0].shape))
-   return params, net
-
-def make_mosaic(imgs, nrows, ncols, border=1):
-    """
-    Given a set of images with all the same shape, makes a
-    mosaic with nrows and ncols
-    """
-    nimgs = imgs.shape[0]
-    imshape = imgs.shape[1:]
-    
-    mosaic = ma.masked_all((nrows * imshape[0] + (nrows - 1) * border,
-                            ncols * imshape[1] + (ncols - 1) * border),
-                            dtype=np.float32)
-    
-    paddedh = imshape[0] + border
-    paddedw = imshape[1] + border
-    for i in xrange(nimgs):
-        row = int(np.floor(i / ncols))
-        col = i % ncols
-        
-        mosaic[row * paddedh:row * paddedh + imshape[0],
-               col * paddedw:col * paddedw + imshape[1]] = imgs[i]
-    return mosaic
-
-def nice_imshow(ax, data, vmin=None, vmax=None, cmap=None):
-    """Wrapper around pl.imshow"""
-    if cmap is None:
-        cmap = cm.jet
-    if vmin is None:
-        vmin = data.min()
-    if vmax is None:
-        vmax = data.max()
-    #divider = make_axes_locatable(ax)
-    #cax = divider.append_axes("right", size="5%", pad=0.05)
-    fig = plt.figure()
-    plt.plot(data)
-    #im = ax.imshow(data, vmin=vmin, vmax=vmax, interpolation='nearest', cmap=cmap)
-    plt.savefig('imagen.jpg')
-    plt.gcf().clear()
-    plt.close(fig)
-
-class printbatch(Callback):
-    def on_batch_end(self, epoch, logs={}):
-        print(logs)
-        
 def plot_training_info(case, metrics, save, history):
     # summarize history for accuracy
     plt.ioff()
@@ -164,54 +85,11 @@ def step_decay(epoch):
 	lrate = initial_lrate * math.pow(drop, math.floor((1+epoch)/epochs_drop))
 	return lrate
  
-def countData():
-    data_folder = '/ssd_drive/data/'
-    parts = np.zeros((101, 3))
-
-    activity_folders = [f for f in os.listdir(data_folder) if os.path.isdir(os.path.join(data_folder, f))]
-    activity_folders.sort()
-        
-    total_data = []
-    for i in range(3):
-        total_data.append([])
-    
-    for (activity_folder, nb_activity_folder) in zip(activity_folders, range(len(activity_folders))):
-        path1 = data_folder + activity_folder + '/'
-        video_folders = [f for f in os.listdir(path1) if os.path.isdir(os.path.join(path1, f))]
-        video_folders.sort()
-        l = len(video_folders)
-        for i in range(3):
-            total_data[i].append([])
-        #for i in range(3):
-         #   total_data[nb_activity_folder].append([])
-        # TRAINING
-        video_folders_aux = video_folders[:int(0.7*l)]
-        parts[nb_activity_folder, 0] += len(video_folders_aux)
-        for video_folder in video_folders_aux:
-            path2 = path1 + video_folder + '/'
-            images = glob.glob(path2 + 'flow_x*.jpg')
-            total_data[0][nb_activity_folder].append(len(images))
-        # VALIDATION
-        video_folders_aux = video_folders[int(l*0.7):int(l*0.85)]
-        parts[nb_activity_folder, 1] += len(video_folders_aux)
-        for video_folder in video_folders_aux:
-            path2 = path1 + video_folder + '/'
-            images = glob.glob(path2 + 'flow_x*.jpg')
-            total_data[1][nb_activity_folder].append(len(images))
-        # TEST
-        video_folders_aux = video_folders[int(l*0.85):]
-        parts[nb_activity_folder, 2] += len(video_folders_aux)
-        for video_folder in video_folders_aux:
-            path2 = path1 + video_folder + '/'
-            images = glob.glob(path2 + 'flow_x*.jpg')
-            total_data[2][nb_activity_folder].append(len(images))
-    return (total_data, parts)
-    
 def generator(folder1,folder2):
     for x,y in zip(folder1,folder2):
         yield x,y
           
-def saveFeatures(param, max_label, batch_size, phase, amount_of_data, parts, save_features, feature_extractor, classifier, features_file, labels_file, train_split, test_split):
+def saveFeatures(param, max_label, batch_size, phase, save_features, feature_extractor, classifier, features_file, labels_file, train_split, test_split):
         #data_folder = '/ssd_drive/data/'
         data_folder = '/ssd_drive/MultiCam_OF2/'
         mean_file = '/ssd_drive/flow_mean.mat'
@@ -610,64 +488,6 @@ def saveFeatures(param, max_label, batch_size, phase, amount_of_data, parts, sav
         h5features.close()
         h5labels.close()
             
-def prueba(model, classifier, path2):
-    f = h5py.File('/home/anunez/project/prueba.h5','w')
-    f.create_dataset('prueba', shape=(20,25088))
-    mean_file = '/ssd_drive/flow_mean.mat'
-    print(path2 + 'flow_x_*')
-    x_images = glob.glob(path2 + 'flow_x_*')
-    x_images.sort()
-    y_images = glob.glob(path2 + 'flow_y_*')
-    y_images.sort()
-        
-    j = 0
-    dim = (256,340,20,len(x_images))
-    print(len(x_images))
-    cont = 0
-    i = 0
-    flow = np.zeros(dim, dtype=np.float64)
-    for flow_x_file, flow_y_file in zip(x_images, y_images):
-        img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
-        img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
-        
-        img_x = cv2.resize(img_x, dim[1::-1])
-        img_y = cv2.resize(img_y, dim[1::-1])
-        flow[:,:,j*2  ,0] = img_x
-        flow[:,:,j*2+1,0] = img_y
-
-        j += 1
-        cont += 1
-        if j == 10:
-            j = 0
-            d = sio.loadmat(mean_file)
-            flow_mean = d['image_mean']
-            flow_1 = flow[:224, :224, :,:]
-            flow_1 = flow_1 - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
-            flow_1 = np.transpose(flow_1, (3,2,0,1))
-            prediction = model.predict(np.expand_dims(flow_1[0,...],0))
-            prediction = np.reshape(prediction, (prediction.shape[0], prediction.shape[1]*prediction.shape[2]*prediction.shape[3]))
-            predicted_class = classifier.predict(prediction)
-            print(np.argmax(predicted_class), predicted_class[0,3])
-            #f['prueba'][i] = prediction
-            i+=1
-            
-def prueba2(model, features, labels):
-    h5features = h5py.File(features)
-    #print(h5features.keys())
-    total = 0
-    for num, key in zip(range(len(h5features.keys())), h5features.keys()):
-        #print('='*20)
-        #print('Clase {}'.format(key))
-        #print('='*20)
-        aciertos = 0.0
-        for i in range(h5features[key].shape[0]):
-            clase = np.argmax(model.predict(np.expand_dims(h5features[key][i,:],0)))
-            if clase == num:
-                aciertos += 1.0
-        #print(float(h5features[key].shape[0]))
-        #print('Accuracy: {}'.format(float(aciertos)/float(h5features[key].shape[0])))
-        total += aciertos
-    print('Accuracy: {}'.format(float(total/100.0)))
 
 def main(learning_rate, batch_size, dropout, batch_norm, weight_0, weight_1, nb_neurons, exp, model_file, weights_file): 
     best_model = 'best_weights/best_weights_{}.hdf5'.format(exp)

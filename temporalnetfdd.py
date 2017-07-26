@@ -324,10 +324,10 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
 
             # ==================== TRAINING ========================         
             class_weight = {0:weight_0, 1:1}
-            if batch_size == 0:
+            if mini_batch_size == 0:
             	history = classifier.fit(X,_y, validation_data=(X2,_y2), batch_size=X.shape[0], nb_epoch=epochs, shuffle='batch', class_weight=class_weight)
             else:
-                history = classifier.fit(X,_y, validation_data=(X2,_y2), batch_size=batch_size, nb_epoch=epochs, shuffle='batch', class_weight=class_weight)
+                history = classifier.fit(X,_y, validation_data=(X2,_y2), batch_size=mini_batch_size, nb_epoch=epochs, shuffle='batch', class_weight=class_weight)
             plot_training_info(exp, ['accuracy', 'loss'], save_plots, history.history)
 
             # ==================== EVALUATION ========================        
