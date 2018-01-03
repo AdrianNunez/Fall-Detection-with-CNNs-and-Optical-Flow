@@ -8,7 +8,7 @@ Núñez-Marcos, A., Azkune, G., & Arganda-Carreras, I. (2017).
 Wireless Communications and Mobile Computing, 2017.
 ```
 
-If you find it useful, please, cite us:
+If you find the code useful for your research, please, cite our paper:
 
 ```
 @article{nunez2017vision,
