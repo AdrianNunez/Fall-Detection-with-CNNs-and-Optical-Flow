@@ -3,7 +3,9 @@
 This repository contains the code for our paper:
 
 ```
-Núñez-Marcos, A., Azkune, G., & Arganda-Carreras, I. (2017). Vision-Based Fall Detection with Convolutional Neural Networks. Wireless Communications and Mobile Computing, 2017.
+Núñez-Marcos, A., Azkune, G., & Arganda-Carreras, I. (2017).
+"Vision-Based Fall Detection with Convolutional Neural Networks"
+Wireless Communications and Mobile Computing, 2017.
 ```
 
 If you find it useful, please, cite us:
