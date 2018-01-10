@@ -82,7 +82,7 @@ def generator(folder1, folder2):
         yield x, y
           
 def saveFeatures(feature_extractor, features_file, labels_file):
-    data_folder = '/ssd_drive/FDD_Fall_OF/'
+    data_folder = '/ssd_drive/FDD_Fall_OF_D100/'
     mean_file = '/ssd_drive/flow_mean.mat'
     L = 10 
     

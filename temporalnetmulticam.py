@@ -126,7 +126,7 @@ def saveFeatures(feature_extractor, features_file, labels_file):
         stages = []
         for i in range(1,25):
             stages.append('chute{:02}'.format(i))
-     
+        
         idx_falls, idx_nofalls = 0, 0
         for stage, nb_stage in zip(stages, range(len(stages))):
             h5features.create_group(stage)
@@ -138,7 +138,7 @@ def saveFeatures(feature_extractor, features_file, labels_file):
                 h5labels[stage].create_group('cam{}'.format(nb_camera))
                 not_falls = glob.glob(camera + '/NotFalls/notfall*'.format(nb_camera))
                 not_falls.sort()
-                
+                print(camera + '/NotFalls/notfall*'.format(nb_camera), len(not_falls))
                 for not_fall in not_falls:
                     label = 1
                     x_images = glob.glob(not_fall + '/flow_x*.jpg')
@@ -181,6 +181,7 @@ def saveFeatures(feature_extractor, features_file, labels_file):
                     continue
                 
                 falls = glob.glob(camera + '/Falls/fall*'.format(nb_camera))
+                print(camera + '/Falls/fall*'.format(nb_camera), len(falls))
                 falls.sort()
                 h5features.close()
                 h5labels.close()
@@ -227,12 +228,12 @@ def saveFeatures(feature_extractor, features_file, labels_file):
 
 def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_file, weights_file): 
     exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, w0)
-    vgg_16_weights = 'weights.h5'
+    vgg_16_weights = '/home/anunez/project/weights.h5'
     balance_dataset = True
     save_plots = True
     num_features = 4096
-    features_file = 'features_multicam.h5'
-    labels_file = 'labels_multicam.h5'
+    features_file = '/home/anunez/project/features_multicam.h5'
+    labels_file = '/home/anunez/project/labels_multicam.h5'
     save_features = True
            
     # =============================================================================================================
@@ -282,7 +283,7 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
     layerscaffe = ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv3_2', 'conv3_3', 'conv4_1', 'conv4_2', 'conv4_3', 'conv5_1', 'conv5_2', 'conv5_3', 'fc6', 'fc7', 'fc8']
     i = 0
     h5 = h5py.File(vgg_16_weights)
-    
+   
     layer_dict = dict([(layer.name, layer) for layer in model.layers])
 
     for layer in layerscaffe[:-3]:
@@ -310,7 +311,8 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
     # =============================================================================================================
     if save_features:
         saveFeatures(model, features_file, labels_file)
-        
+    print('finished')
+    sys.exit()
     # =============================================================================================================
     # TRAINING
     # =============================================================================================================
