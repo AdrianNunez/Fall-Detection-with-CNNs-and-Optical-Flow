@@ -34,6 +34,8 @@ The repository contains the following files:
 
 * **brightness.py** contains the script to generate the images used in the experiment of section 4.5 of the paper.
 
+___
+
 ### Reproducing the experiments
 
 Necessary files:
@@ -47,9 +49,9 @@ If you want to use your own dataset you need to have a directory with two subfol
 
 #### x. Reproducing the experiment with different lighting conditions (Section 4.5 of the paper)
 
-**brightness.py** is required to darken or adding a lighting change to the original images of any dataset. 
+'brightness.py' is required to darken or adding a lighting change to the original images of any dataset. 
 
-1. Change the variables 'data_folder' and 'output_path' at the top of the script to match with the path to your dataset and the outputh path you desire.
+1. Change the variables 'data_folder' and 'output_path' at the top of the script to match with the path to your dataset and the outputh path you desire (no need to be already created). By applying the script, the images inside 'data_folder' path will be transformed (darkened or dynamic light added to them) and will be stored in 'output_path'.
 
 2. The 'mode' variable can have the value 'darken' to obtain the images for the experiment 4.5.1 (darkened images). Any other value will retrieve the images for the experiment 4.5.2 (lighting change).
 

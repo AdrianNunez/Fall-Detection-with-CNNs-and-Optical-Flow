@@ -1,49 +1,40 @@
 from __future__ import print_function
 from numpy.random import seed
 seed(1)
-import sys
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import os
-from PIL import Image
-import io
-from sklearn.model_selection import StratifiedShuffleSplit
-from vgg16module import VGG16
-
-from keras.models import Model, model_from_json, model_from_yaml, Sequential
-from keras.layers import Input, Convolution2D, MaxPooling2D, LSTM, Reshape, Merge, TimeDistributed, Flatten, Activation, Dense, Dropout, merge, AveragePooling2D, ZeroPadding2D, Lambda
-from keras.optimizers import Adam, SGD
+from keras.models import Model, Sequential
+from keras.layers import Input, Convolution2D, MaxPooling2D, Flatten, Activation, Dense, Dropout, ZeroPadding2D
+from keras.optimizers import Adam
 from keras.layers.normalization import BatchNormalization 
 from keras import backend as K
 K.set_image_dim_ordering('th')
-from keras.utils import np_utils
 from sklearn.metrics import confusion_matrix, accuracy_score
-from skimage.io import imsave
-from keras.callbacks import Callback, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, LearningRateScheduler
-from keras.utils.np_utils import to_categorical
-import json
-from scipy.ndimage import minimum, maximum, imread
-import math
-import numpy.ma as ma
-import matplotlib.cm as cm
 import h5py
-import random
-from collections import OrderedDict
 import scipy.io as sio
 import cv2
 import glob
 import gc
-from scipy.stats import mode
-from collections import Counter
-from sklearn import svm
-from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import KFold
 from keras.layers.advanced_activations import ELU
+
+data_folder = '/ssd_drive/UR_Fall_OF/'
+mean_file = '/ssd_drive/flow_mean.mat'
+L = 10
+num_features = 4096
         
 def plot_training_info(case, metrics, save, history):
-    # summarize history for accuracy
+    '''
+    Function to create plots for train and validation loss and accuracy
+    Input:
+    * case: name for the plot, an 'accuracy.png' or 'loss.png' will be concatenated after the name.
+    * metrics: list of metrics to store: 'loss' and/or 'accuracy'
+    * save: boolean to store the plots or only show them.
+    * history: History object returned by the Keras fit function.
+    '''
     plt.ioff()
     if 'accuracy' in metrics:     
         fig = plt.figure()
@@ -77,154 +68,161 @@ def plot_training_info(case, metrics, save, history):
         else:
             plt.show()
         plt.close(fig)
-        
-def step_decay(epoch):
-	initial_lrate = 0.005
-	drop = 0.5
-	epochs_drop = 10.0
-	lrate = initial_lrate * math.pow(drop, math.floor((1+epoch)/epochs_drop))
-	return lrate
-    
-def generator(folder1,folder2):
-    for x,y in zip(folder1,folder2):
-        yield x,y
+ 
+def generator(list1, lits2):
+    '''
+    Auxiliar generator: returns the ith element of both given list with each call to next() 
+    '''
+    for x,y in zip(list1,lits2):
+        yield x, y
           
 def saveFeatures(feature_extractor, features_file, labels_file):
-        data_folder = '/ssd_drive/MultiCam_OF2/'
-        mean_file = '/ssd_drive/flow_mean.mat'
-        L = 10 
-        
-        class0 = 'Falls'
-        class1 = 'NotFalls'
-      
-        d = sio.loadmat(mean_file)
-        flow_mean = d['image_mean']
-        num_features = 4096
-       
-        h5features = h5py.File(features_file,'w')
-        h5labels = h5py.File(labels_file,'w')
-        
-        fall_videos = np.zeros((24,2), dtype=np.int)
-        i = 0
-        while i < 3:
-            fall_videos[i,:] = [i*7, i*7+7]
-            i += 1
-        fall_videos[i,:] = [i*7, i*7+14]
+    '''
+    Function to load the optical flow stacks, do a feed-forward through the feature extractor (VGG16) and
+    store the output feature vectors in the file 'features_file' and the labels in 'labels_file'.
+    Input:
+    * feature_extractor: model VGG16 until the fc6 layer.
+    * features_file: path to the hdf5 file where the extracted features are going to be stored
+    * labels_file: path to the hdf5 file where the labels of the features are going to be stored
+    * features_key: name of the key for the hdf5 file to store the features
+    * labels_key: name of the key for the hdf5 file to store the labels
+    '''
+    data_folder = '/ssd_drive/MultiCam_OF2/'
+    mean_file = '/ssd_drive/flow_mean.mat'
+    L = 10 
+    
+    class0 = 'Falls'
+    class1 = 'NotFalls'
+  
+    # Load the mean file to subtract to the images
+    d = sio.loadmat(mean_file)
+    flow_mean = d['image_mean']
+   
+    h5features = h5py.File(features_file,'w')
+    h5labels = h5py.File(labels_file,'w')
+    
+    fall_videos = np.zeros((24,2), dtype=np.int)
+    i = 0
+    while i < 3:
+        fall_videos[i,:] = [i*7, i*7+7]
         i += 1
-        while i < 23:
-            fall_videos[i,:] = [i*7, i*7+7]
-            i += 1
-        fall_videos[i,:] = [i*7, i*7]
-        
-        not_fall_videos = np.zeros((24,2), dtype=np.int)
-        i = 0
-        while i < 23:
-            not_fall_videos[i,:] = [i*7, i*7+14]
-            i += 1
-        not_fall_videos[i,:] = [i*7, i*7+7]
-        
-        stages = []
-        for i in range(1,25):
-            stages.append('chute{:02}'.format(i))
-        
-        idx_falls, idx_nofalls = 0, 0
-        for stage, nb_stage in zip(stages, range(len(stages))):
-            h5features.create_group(stage)
-            h5labels.create_group(stage)  
-            cameras = glob.glob(data_folder + stage + '/cam*')
-            cameras.sort()
-            for camera, nb_camera in zip(cameras, range(1, len(cameras)+1)):
-                h5features[stage].create_group('cam{}'.format(nb_camera))
-                h5labels[stage].create_group('cam{}'.format(nb_camera))
-                not_falls = glob.glob(camera + '/NotFalls/notfall*'.format(nb_camera))
-                not_falls.sort()
-                print(camera + '/NotFalls/notfall*'.format(nb_camera), len(not_falls))
-                for not_fall in not_falls:
-                    label = 1
-                    x_images = glob.glob(not_fall + '/flow_x*.jpg')
-                    x_images.sort()
-                    y_images = glob.glob(not_fall + '/flow_x*.jpg')
-                    y_images.sort()
-                    nb_stacks = int(len(x_images))-L+1
-                    
-                    features_notfall = h5features[stage]['cam{}'.format(nb_camera)].create_dataset('notfall{:04}'.format(idx_nofalls), shape=(nb_stacks, num_features), dtype='float64')
-                    labels_notfall = h5labels[stage]['cam{}'.format(nb_camera)].create_dataset('notfall{:04}'.format(idx_nofalls), shape=(nb_stacks, 1), dtype='float64')
-                    idx_nofalls += 1
-                    
-                    # NO FALL
-                    flow = np.zeros(shape=(224,224,2*L,nb_stacks), dtype=np.float64)
-                    gen = generator(x_images,y_images)
-                    for i in range(len(x_images)):
-                        flow_x_file, flow_y_file = gen.next()
-                        img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
-                        img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
-                        for s in list(reversed(range(min(10,i+1)))):
-                            if i-s < nb_stacks:
-                                flow[:,:,2*s,  i-s] = img_x
-                                flow[:,:,2*s+1,i-s] = img_y
-                        del img_x,img_y
-                        gc.collect()
-                    flow = flow - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
-                    flow = np.transpose(flow, (3, 2, 0, 1)) 
-                    predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
-                    truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
-                    for i in range(flow.shape[0]):
-                        prediction = feature_extractor.predict(np.expand_dims(flow[i, ...],0))
-                        predictions[i, ...] = prediction
-                        truth[i] = label
-                    features_notfall[:,:] = predictions
-                    labels_notfall[:,:] = truth
-                    del predictions, truth, flow, features_notfall, labels_notfall, x_images, y_images, nb_stacks
-                    gc.collect()
-                    
-                if stage == 'chute24':
-                    continue
+    fall_videos[i,:] = [i*7, i*7+14]
+    i += 1
+    while i < 23:
+        fall_videos[i,:] = [i*7, i*7+7]
+        i += 1
+    fall_videos[i,:] = [i*7, i*7]
+    
+    not_fall_videos = np.zeros((24,2), dtype=np.int)
+    i = 0
+    while i < 23:
+        not_fall_videos[i,:] = [i*7, i*7+14]
+        i += 1
+    not_fall_videos[i,:] = [i*7, i*7+7]
+    
+    stages = []
+    for i in range(1,25):
+        stages.append('chute{:02}'.format(i))
+    
+    idx_falls, idx_nofalls = 0, 0
+    # For each stage7scenario
+    for stage, nb_stage in zip(stages, range(len(stages))):
+        h5features.create_group(stage)
+        h5labels.create_group(stage)  
+        cameras = glob.glob(data_folder + stage + '/cam*')
+        cameras.sort()
+        for camera, nb_camera in zip(cameras, range(1, len(cameras)+1)):
+            h5features[stage].create_group('cam{}'.format(nb_camera))
+            h5labels[stage].create_group('cam{}'.format(nb_camera))
+            not_falls = glob.glob(camera + '/NotFalls/notfall*'.format(nb_camera))
+            not_falls.sort()
+            print(camera + '/NotFalls/notfall*'.format(nb_camera), len(not_falls))
+            for not_fall in not_falls:
+                label = 1
+                x_images = glob.glob(not_fall + '/flow_x*.jpg')
+                x_images.sort()
+                y_images = glob.glob(not_fall + '/flow_x*.jpg')
+                y_images.sort()
+                nb_stacks = int(len(x_images))-L+1
                 
-                falls = glob.glob(camera + '/Falls/fall*'.format(nb_camera))
-                print(camera + '/Falls/fall*'.format(nb_camera), len(falls))
-                falls.sort()
-                h5features.close()
-                h5labels.close()
-                h5features = h5py.File(features_file,'a')
-                h5labels = h5py.File(labels_file,'a')
-                for fall in falls:     
-                    label = 0
-                    x_images = glob.glob(fall + '/flow_x*.jpg')
-                    x_images.sort()
-                    y_images = glob.glob(fall + '/flow_y*.jpg')
-                    y_images.sort()
-                    nb_stacks = int(len(x_images))-L+1
-                    
-                    features_fall = h5features[stage]['cam{}'.format(nb_camera)].create_dataset('fall{:04}'.format(idx_falls), shape=(nb_stacks, num_features), dtype='float64')
-                    labels_fall = h5labels[stage]['cam{}'.format(nb_camera)].create_dataset('fall{:04}'.format(idx_falls), shape=(nb_stacks, 1), dtype='float64')
-                    idx_falls += 1
-                    flow = np.zeros(shape=(224,224,2*L,nb_stacks), dtype=np.float64)
-                    
-                    gen = generator(x_images,y_images)
-                    for i in range(len(x_images)):
-                        flow_x_file, flow_y_file = gen.next()
-                        img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
-                        img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
-                        for s in list(reversed(range(min(10,i+1)))):
-                            if i-s < nb_stacks:
-                                flow[:,:,2*s,  i-s] = img_x
-                                flow[:,:,2*s+1,i-s] = img_y
-                        del img_x,img_y
-                        gc.collect()
-                    flow = flow - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
-                    flow = np.transpose(flow, (3, 2, 0, 1)) 
-                    predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
-                    truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
-                    for i in range(flow.shape[0]):
-                        prediction = feature_extractor.predict(np.expand_dims(flow[i, ...],0))
-                        predictions[i, ...] = prediction
-                        truth[i] = label
-                    features_fall[:,:] = predictions
-                    labels_fall[:,:] = truth
-                    del predictions, truth, flow, features_fall, labels_fall
-                   
-        h5features.close()
-        h5labels.close()
+                features_notfall = h5features[stage]['cam{}'.format(nb_camera)].create_dataset('notfall{:04}'.format(idx_nofalls), shape=(nb_stacks, num_features), dtype='float64')
+                labels_notfall = h5labels[stage]['cam{}'.format(nb_camera)].create_dataset('notfall{:04}'.format(idx_nofalls), shape=(nb_stacks, 1), dtype='float64')
+                idx_nofalls += 1
+                
+                # NO FALL
+                flow = np.zeros(shape=(224,224,2*L,nb_stacks), dtype=np.float64)
+                gen = generator(x_images,y_images)
+                for i in range(len(x_images)):
+                    flow_x_file, flow_y_file = gen.next()
+                    img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
+                    img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
+                    for s in list(reversed(range(min(10,i+1)))):
+                        if i-s < nb_stacks:
+                            flow[:,:,2*s,  i-s] = img_x
+                            flow[:,:,2*s+1,i-s] = img_y
+                    del img_x,img_y
+                    gc.collect()
+                flow = flow - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
+                flow = np.transpose(flow, (3, 2, 0, 1)) 
+                predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
+                truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
+                for i in range(flow.shape[0]):
+                    prediction = feature_extractor.predict(np.expand_dims(flow[i, ...],0))
+                    predictions[i, ...] = prediction
+                    truth[i] = label
+                features_notfall[:,:] = predictions
+                labels_notfall[:,:] = truth
+                del predictions, truth, flow, features_notfall, labels_notfall, x_images, y_images, nb_stacks
+                gc.collect()
+                
+            if stage == 'chute24':
+                continue
+            
+            falls = glob.glob(camera + '/Falls/fall*'.format(nb_camera))
+            print(camera + '/Falls/fall*'.format(nb_camera), len(falls))
+            falls.sort()
+            h5features.close()
+            h5labels.close()
+            h5features = h5py.File(features_file,'a')
+            h5labels = h5py.File(labels_file,'a')
+            for fall in falls:     
+                label = 0
+                x_images = glob.glob(fall + '/flow_x*.jpg')
+                x_images.sort()
+                y_images = glob.glob(fall + '/flow_y*.jpg')
+                y_images.sort()
+                nb_stacks = int(len(x_images))-L+1
+                
+                features_fall = h5features[stage]['cam{}'.format(nb_camera)].create_dataset('fall{:04}'.format(idx_falls), shape=(nb_stacks, num_features), dtype='float64')
+                labels_fall = h5labels[stage]['cam{}'.format(nb_camera)].create_dataset('fall{:04}'.format(idx_falls), shape=(nb_stacks, 1), dtype='float64')
+                idx_falls += 1
+                flow = np.zeros(shape=(224,224,2*L,nb_stacks), dtype=np.float64)
+                
+                gen = generator(x_images,y_images)
+                for i in range(len(x_images)):
+                    flow_x_file, flow_y_file = gen.next()
+                    img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
+                    img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
+                    for s in list(reversed(range(min(10,i+1)))):
+                        if i-s < nb_stacks:
+                            flow[:,:,2*s,  i-s] = img_x
+                            flow[:,:,2*s+1,i-s] = img_y
+                    del img_x,img_y
+                    gc.collect()
+                flow = flow - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
+                flow = np.transpose(flow, (3, 2, 0, 1)) 
+                predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
+                truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
+                for i in range(flow.shape[0]):
+                    prediction = feature_extractor.predict(np.expand_dims(flow[i, ...],0))
+                    predictions[i, ...] = prediction
+                    truth[i] = label
+                features_fall[:,:] = predictions
+                labels_fall[:,:] = truth
+                del predictions, truth, flow, features_fall, labels_fall
+               
+    h5features.close()
+    h5labels.close()
 
 def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_file, weights_file): 
     exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, w0)
