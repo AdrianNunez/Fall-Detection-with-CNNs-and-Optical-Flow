@@ -30,8 +30,6 @@ The repository contains the following files:
 
 * **temporalnetxxx.py**: there are four scripts with this name, three of those are specific to a dataset (URFD, FDD and Multicam) and the remaining one, **temporalnetgeneral.py** it is the code for the experiment shown in the section 4.6 of the paper (a multi-tasking training with the previous three datasets). The four scripts do a feed-forward pass through the VGG16 of the optical flow stacks generated from the images of those datasets to get their features (downloadable below). Then, they fine-tune three fully-connected layers with those features to correctly classify actions.
 
-* **vgg16module.py** contains the VGG16 architecture in Keras.
-
 * **brightness.py** contains the script to generate the images used in the experiment of section 4.5 of the paper.
 
 ___

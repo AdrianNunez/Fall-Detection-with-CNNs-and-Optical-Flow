@@ -18,10 +18,11 @@ import scipy.io as sio
 import cv2
 import glob
 import gc
-from sklearn.model_selection import KFold
 from keras.layers.advanced_activations import ELU
+from keras.callbacks import EarlyStopping
+from sklearn.metrics import roc_curve, auc
 
-data_folder = '/ssd_drive/UR_Fall_OF/'
+data_folder = '/ssd_drive/MultiCam_OF2/'
 mean_file = '/ssd_drive/flow_mean.mat'
 L = 10
 num_features = 4096
@@ -76,7 +77,7 @@ def generator(list1, lits2):
     for x,y in zip(list1,lits2):
         yield x, y
           
-def saveFeatures(feature_extractor, features_file, labels_file):
+def saveFeatures(feature_extractor, features_file, labels_file, features_key, labels_key):
     '''
     Function to load the optical flow stacks, do a feed-forward through the feature extractor (VGG16) and
     store the output feature vectors in the file 'features_file' and the labels in 'labels_file'.
@@ -87,9 +88,6 @@ def saveFeatures(feature_extractor, features_file, labels_file):
     * features_key: name of the key for the hdf5 file to store the features
     * labels_key: name of the key for the hdf5 file to store the labels
     '''
-    data_folder = '/ssd_drive/MultiCam_OF2/'
-    mean_file = '/ssd_drive/flow_mean.mat'
-    L = 10 
     
     class0 = 'Falls'
     class1 = 'NotFalls'
@@ -225,13 +223,18 @@ def saveFeatures(feature_extractor, features_file, labels_file):
     h5labels.close()
 
 def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_file, weights_file): 
+     # Name of the experiment
     exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, w0)
-    vgg_16_weights = '/home/anunez/project/weights.h5'
-    balance_dataset = True
+    # Path to the weights of the UCF101 pre-training for the VGG16
+    vgg_16_weights = 'weights.h5'
+    # Balance the number of positive and negative samples
     save_plots = True
-    num_features = 4096
-    features_file = '/home/anunez/project/features_multicam.h5'
-    labels_file = '/home/anunez/project/labels_multicam.h5'
+    
+    features_file = 'features_multicam.h5'
+    labels_file = 'labels_multicam.h5'
+    features_key = 'features'
+    labels_key = 'labels'
+    # Whether to save the features in a jdf5 file o use the available ones
     save_features = True
            
     # =============================================================================================================
@@ -278,12 +281,16 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
     model.add(Flatten())
     model.add(Dense(4096, name='fc6', init='glorot_uniform'))
    
+    # =============================================================================================================
+    # WEIGHT INITIALIZATION
+    # =============================================================================================================
     layerscaffe = ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv3_2', 'conv3_3', 'conv4_1', 'conv4_2', 'conv4_3', 'conv5_1', 'conv5_2', 'conv5_3', 'fc6', 'fc7', 'fc8']
     i = 0
     h5 = h5py.File(vgg_16_weights)
    
     layer_dict = dict([(layer.name, layer) for layer in model.layers])
 
+    # Copy the weights stored in the 'vgg_16_weights' file to the feature extractor part of the VGG16
     for layer in layerscaffe[:-3]:
         w2, b2 = h5['data'][layer]['0'], h5['data'][layer]['1']
         w2 = np.transpose(np.asarray(w2), (0,1,2,3))
@@ -292,7 +299,8 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
         layer_dict[layer].W.set_value(w2)
         layer_dict[layer].b.set_value(b2)
         i += 1
-        
+    
+    # Copy the weights of the first fully-connected layer (fc6)
     layer = layerscaffe[-3]
     w2, b2 = h5['data'][layer]['0'], h5['data'][layer]['1']
     w2 = np.transpose(np.asarray(w2), (1,0))
@@ -300,29 +308,28 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
     layer_dict[layer].W.set_value(w2)
     layer_dict[layer].b.set_value(b2)
     i += 1
-    
-    adam = Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0005)
-    model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
 
     # =============================================================================================================
     # FEATURE EXTRACTION
     # =============================================================================================================
     if save_features:
-        saveFeatures(model, features_file, labels_file)
+        saveFeatures(model, features_file, labels_file, features_key, labels_key)
 
     # =============================================================================================================
     # TRAINING
     # =============================================================================================================
-
+    adam = Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0005)
+    model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])    
+    e = EarlyStopping(monitor='val_loss', min_delta=0, patience=100, verbose=0, mode='auto')
     do_training = True
     compute_metrics = True
     threshold = 0.5
-    e = EarlyStopping(monitor='val_loss', min_delta=0, patience=100, verbose=0, mode='auto')
     
     if do_training:
         h5features = h5py.File(features_file, 'r')
         h5labels = h5py.File(labels_file, 'r')
   
+        # Load the data separated by cameras for cross-validation
         stages = []
         for i in range(1,25):
             stages.append('chute{:02}'.format(i))
@@ -343,12 +350,14 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                 else:
                     cams_x[nb_cam] = np.concatenate([cams_x[nb_cam], temp_x], axis=0)
                     cams_y[nb_cam] = np.concatenate([cams_y[nb_cam], temp_y], axis=0)
-                
+                    
+        # cams_x[nb_cam] contains all the optical flow stacks of the nb_cam camera
         sensitivities = []
         specificities = []
         aucs = []
         accuracies = []
-        # LEAVE-ONE-OUT
+        
+        # LEAVE-ONE-CAMERA-OUT CROSS-VALIDATION
         for cam in range(8):
             print('='*30)
             print('LEAVE-ONE-OUT STEP {}/8'.format(cam+1))
@@ -358,8 +367,10 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
             train_x = cams_x[0:cam] + cams_x[cam+1:]
             train_y = cams_y[0:cam] + cams_y[cam+1:]
            
+           
             X = []
             _y = []
+            # Balance the positive and negative samples
             for cam_x, cam_y in zip(train_x, train_y):
                 all0 = np.asarray(np.where(cam_y==0)[0])
                 all1 = np.asarray(np.where(cam_y==1)[0])
@@ -396,13 +407,15 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
             classifier = Model(input=extracted_features, output=x, name='classifier')
             classifier.compile(optimizer=adam, loss='binary_crossentropy',  metrics=['accuracy'])
             
-            # ==================== TRAINING ========================         
+            # ==================== TRAINING ========================       
+            # weighting of each class: only the fall class gets a different weight
             class_weight = {0:weight_0, 1:1}
 
             if mini_batch_size == 0:
                 history = classifier.fit(X, _y, validation_data=(X2, _y2), batch_size=X.shape[0], nb_epoch=epochs, shuffle=True, class_weight=class_weight, callbacks=[e])
             else:
                 history = classifier.fit(X, _y, validation_data=(X2, _y2), batch_size=mini_batch_size, nb_epoch=epochs, shuffle=True, class_weight=class_weight, callbacks=[e])
+            plot_training_info(exp, ['accuracy', 'loss'], save_plots, history.history)
             
             # ==================== EVALUATION ========================        
             if compute_metrics:
@@ -413,7 +426,10 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                       predicted[i] = 0
                   else:
                       predicted[i] = 1
+               # Array of predictions 0/1
                predicted = np.asarray(predicted).astype(int)
+               
+               # Compute metrics and print them
                cm = confusion_matrix(_y2, predicted,labels=[0,1])
                tp = cm[0][0]
                fn = cm[0][1]
@@ -430,6 +446,7 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                accuracy = accuracy_score(_y2, predicted)
                fpr, tpr, _ = roc_curve(_y2, predicted)
                roc_auc = auc(fpr, tpr)
+               
                print('TP: {}, TN: {}, FP: {}, FN: {}'.format(tp,tn,fp,fn))
                print('TPR: {}, TNR: {}, FPR: {}, FNR: {}'.format(tpr,tnr,fpr,fnr))   
                print('Sensitivity/Recall: {}'.format(recall))
@@ -438,6 +455,8 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                print('F1-measure: {}'.format(f1))
                print('Accuracy: {}'.format(accuracy))
                print('AUC: {}'.format(roc_auc))
+               
+               # Store the metrics for this epoch
                sensitivities.append(tp/float(tp+fn))
                specificities.append(tn/float(tn+fp))
                aucs.append(roc_auc)

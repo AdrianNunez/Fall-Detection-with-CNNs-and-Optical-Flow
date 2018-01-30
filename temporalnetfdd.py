@@ -1,48 +1,60 @@
 from __future__ import print_function
 from numpy.random import seed
 seed(1)
-import sys
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import os
-from PIL import Image
-import io
-from sklearn.model_selection import StratifiedShuffleSplit
-
-from keras.models import Model, model_from_json, model_from_yaml, Sequential
-from keras.layers import Input, Convolution2D, MaxPooling2D, LSTM, Reshape, Merge, TimeDistributed, Flatten, Activation, Dense, Dropout, merge, AveragePooling2D, ZeroPadding2D, Lambda
-from keras.optimizers import Adam, SGD
+from keras.models import Model, Sequential
+from keras.layers import Input, Convolution2D, MaxPooling2D, Flatten, Activation, Dense, Dropout, ZeroPadding2D
+from keras.optimizers import Adam
 from keras.layers.normalization import BatchNormalization 
 from keras import backend as K
 K.set_image_dim_ordering('th')
-from keras.utils import np_utils
 from sklearn.metrics import confusion_matrix, accuracy_score
-from skimage.io import imsave
-from keras.callbacks import Callback, ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, LearningRateScheduler
-from keras.utils.np_utils import to_categorical
-import json
-from scipy.ndimage import minimum, maximum, imread
-import math
-import numpy.ma as ma
-import matplotlib.cm as cm
 import h5py
-import random
-from collections import OrderedDict
 import scipy.io as sio
 import cv2
 import glob
 import gc
-from scipy.stats import mode
-from collections import Counter
-from sklearn import svm
-from sklearn.metrics import roc_curve, auc
 from sklearn.model_selection import KFold
 from keras.layers.advanced_activations import ELU
+
+data_folder = '/ssd_drive/FDD_Fall_OF_D100/'
+mean_file = '/ssd_drive/flow_mean.mat'
+model_file = 'models/exp_'
+weights_file = 'weights/exp_'
+L = 10 
+num_features = 4096
+batch_norm = True
+learning_rate = 0.001
+mini_batch_size = 0
+weight_0 = 2
+epochs = 3000
+# Path to the weights of the UCF101 pre-training for the VGG16
+vgg_16_weights = 'weights.h5'
+# Balance the number of positive and negative samples
+save_plots = True
+features_file = 'features_fdd.h5'
+labels_file = 'labels_fdd.h5'
+# Key for hdf5 files
+features_key = 'features'
+labels_key = 'labels'
+# Whether to save the features in a jdf5 file o use the available ones
+save_features = True
+# Name of the experiment
+exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, weight_0)
      
 def plot_training_info(case, metrics, save, history):
-    # summarize history for accuracy
+    '''
+    Function to create plots for train and validation loss and accuracy
+    Input:
+    * case: name for the plot, an 'accuracy.png' or 'loss.png' will be concatenated after the name.
+    * metrics: list of metrics to store: 'loss' and/or 'accuracy'
+    * save: boolean to store the plots or only show them.
+    * history: History object returned by the Keras fit function.
+    '''
     plt.ioff()
     if 'accuracy' in metrics:     
         fig = plt.figure()
@@ -76,23 +88,34 @@ def plot_training_info(case, metrics, save, history):
         else:
             plt.show()
         plt.close(fig)
-    
-def generator(folder1, folder2):
-    for x, y in zip(folder1, folder2):
+        
+def generator(list1, lits2):
+    '''
+    Auxiliar generator: returns the ith element of both given list with each call to next() 
+    '''
+    for x,y in zip(list1,lits2):
         yield x, y
           
-def saveFeatures(feature_extractor, features_file, labels_file):
-    data_folder = '/ssd_drive/FDD_Fall_OF_D100/'
-    mean_file = '/ssd_drive/flow_mean.mat'
-    L = 10 
+def saveFeatures(feature_extractor, features_file, labels_file, features_key, labels_key):
+    '''
+    Function to load the optical flow stacks, do a feed-forward through the feature extractor (VGG16) and
+    store the output feature vectors in the file 'features_file' and the labels in 'labels_file'.
+    Input:
+    * feature_extractor: model VGG16 until the fc6 layer.
+    * features_file: path to the hdf5 file where the extracted features are going to be stored
+    * labels_file: path to the hdf5 file where the labels of the features are going to be stored
+    * features_key: name of the key for the hdf5 file to store the features
+    * labels_key: name of the key for the hdf5 file to store the labels
+    '''
     
     class0 = 'Falls'
     class1 = 'NotFalls'
 
+    # Load the mean file to subtract to the images
     d = sio.loadmat(mean_file)
     flow_mean = d['image_mean']
-    num_features = 4096
   
+    # Fill the folders and classes arrays with all the paths to the data
     folders, classes = [], []
     fall_videos = [f for f in os.listdir(data_folder + class0) if os.path.isdir(os.path.join(data_folder + class0, f))]
     fall_videos.sort()
@@ -110,42 +133,47 @@ def saveFeatures(feature_extractor, features_file, labels_file):
             folders.append(data_folder + class1 + '/' + not_fall_video)
             classes.append(1)
 
-    h5features = h5py.File(features_file,'w')
-    h5labels = h5py.File(labels_file,'w')
-   
+    # Total amount of stacks, with sliding window = num_images-L+1
     nb_total_stacks = 0
     for folder in folders:
         x_images = glob.glob(folder + '/flow_x*.jpg')
         nb_total_stacks += int(len(x_images))-L+1
-           
-    X = folders
-    y = classes
-    dataset_features = h5features.create_dataset('features', shape=(nb_total_stacks, num_features), dtype='float64')
-    dataset_labels = h5labels.create_dataset('labels', shape=(nb_total_stacks, 1), dtype='float64')    
+        
+    # File to store the extracted features and datasets to store them
+    # IMPORTANT NOTE: 'w' mode totally erases previous data
+    h5features = h5py.File(features_file,'w')
+    h5labels = h5py.File(labels_file,'w')
+    dataset_features = h5features.create_dataset(features_key, shape=(nb_total_stacks, num_features), dtype='float64')
+    dataset_labels = h5labels.create_dataset(labels_key, shape=(nb_total_stacks, 1), dtype='float64')    
     cont = 0
 
-    for folder, label in zip(X, y):
+    for folder, label in zip(folders, classes):
         x_images = glob.glob(folder + '/flow_x*.jpg')
         x_images.sort()
         y_images = glob.glob(folder + '/flow_y*.jpg')
         y_images.sort()
         nb_stacks = int(len(x_images))-L+1
+        # Here nb_stacks optical flow stacks will be stored
         flow = np.zeros(shape=(224,224,2*L,nb_stacks), dtype=np.float64)
         gen = generator(x_images,y_images)
         for i in range(len(x_images)):
             flow_x_file, flow_y_file = gen.next()
             img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
             img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
+            # Assign an image i to the jth stack in the kth position, but also in the j+1th stack in the k+1th position and so on (for sliding window) 
             for s in list(reversed(range(min(10,i+1)))):
                 if i-s < nb_stacks:
                     flow[:,:,2*s,  i-s] = img_x
                     flow[:,:,2*s+1,i-s] = img_y
             del img_x,img_y
-        gc.collect()
+            gc.collect()
+        # Subtract mean
         flow = flow - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
+        # Transpose for channel ordering (Theano in this case)
         flow = np.transpose(flow, (3, 2, 0, 1)) 
         predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
         truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
+        # Process each stack: do the feed-forward pass and store in the hdf5 file the output
         for i in range(flow.shape[0]):
             prediction = feature_extractor.predict(np.expand_dims(flow[i, ...],0))
             predictions[i, ...] = prediction
@@ -156,16 +184,7 @@ def saveFeatures(feature_extractor, features_file, labels_file):
     h5features.close()
     h5labels.close()
 
-def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_file, weights_file): 
-    exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, w0)
-    vgg_16_weights = 'weights.h5'
-    balance_dataset = True
-    save_plots = True
-    num_features = 4096
-    features_file = 'features_fdd.h5'
-    labels_file = 'labels_fdd.h5'
-    save_features = True
-
+def main(): 
     # =============================================================================================================
     # VGG-16 ARCHITECTURE
     # =============================================================================================================
@@ -213,12 +232,12 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
     # =============================================================================================================
     # WEIGHT INITIALIZATION
     # =============================================================================================================
-   
     layerscaffe = ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv3_2', 'conv3_3', 'conv4_1', 'conv4_2', 'conv4_3', 'conv5_1', 'conv5_2', 'conv5_3', 'fc6', 'fc7', 'fc8']
     h5 = h5py.File(vgg_16_weights)
     
     layer_dict = dict([(layer.name, layer) for layer in model.layers])
 
+    # Copy the weights stored in the 'vgg_16_weights' file to the feature extractor part of the VGG16
     for layer in layerscaffe[:-3]:
         w2, b2 = h5['data'][layer]['0'], h5['data'][layer]['1']
         w2 = np.transpose(np.asarray(w2), (0,1,2,3))
@@ -226,7 +245,8 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
         b2 = np.asarray(b2)
         layer_dict[layer].W.set_value(w2)
         layer_dict[layer].b.set_value(b2)
-        
+    
+    # Copy the weights of the first fully-connected layer (fc6)
     layer = layerscaffe[-3]
     w2, b2 = h5['data'][layer]['0'], h5['data'][layer]['1']
     w2 = np.transpose(np.asarray(w2), (1,0))
@@ -254,8 +274,9 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
         h5features = h5py.File(features_file, 'r')
         h5labels = h5py.File(labels_file, 'r')
         
-        X_full = np.asarray(h5features['features'])
-        _y_full = np.asarray(h5labels['labels'])
+        # X_full will contain all the feature vectors extracted from optical flow images
+        X_full = h5features[features_key]
+        _y_full = np.asarray(h5labels[labels_key])
             
         zeroes = np.asarray(np.where(_y_full==0)[0])
         ones = np.asarray(np.where(_y_full==1)[0])
@@ -287,17 +308,17 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
             X2 = np.concatenate((X_full[test_index_falls, ...], X_full[test_index_nofalls, ...]))
             _y2 = np.concatenate((_y_full[test_index_falls, ...], _y_full[test_index_nofalls, ...])) 
          
+            # Balance the number of positive and negative samples so that there is the same amount of each of them
             all0 = np.asarray(np.where(_y==0)[0])
             all1 = np.asarray(np.where(_y==1)[0])   
-            if balance_dataset:
-                if len(all0) < len(all1):
-                    all1 = np.random.choice(all1, len(all0), replace=False)
-                else:
-                    all0 = np.random.choice(all0, len(all1), replace=False)
-                allin = np.concatenate((all0.flatten(),all1.flatten()))
-                allin.sort()
-                X = X[allin,...]
-                _y = _y[allin]
+            if len(all0) < len(all1):
+                all1 = np.random.choice(all1, len(all0), replace=False)
+            else:
+                all0 = np.random.choice(all0, len(all1), replace=False)
+            allin = np.concatenate((all0.flatten(),all1.flatten()))
+            allin.sort()
+            X = X[allin,...]
+            _y = _y[allin]
 
             # ==================== CLASSIFIER ========================
             extracted_features = Input(shape=(4096,), dtype='float32', name='input')
@@ -322,8 +343,10 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
             classifier = Model(input=extracted_features, output=x, name='classifier')
             classifier.compile(optimizer=adam, loss='binary_crossentropy',  metrics=['accuracy'])
 
-            # ==================== TRAINING ========================         
-            class_weight = {0:weight_0, 1:1}
+            # ==================== TRAINING =======================
+            # weighting of each class: only the fall class gets a different weight
+            class_weight = {0: weight_0, 1: 1}
+            # Batch training
             if mini_batch_size == 0:
             	history = classifier.fit(X,_y, validation_data=(X2,_y2), batch_size=X.shape[0], nb_epoch=epochs, shuffle='batch', class_weight=class_weight)
             else:
@@ -338,7 +361,9 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                		predicted[i] = 0
                    else:
                		predicted[i] = 1
+               # Array of predictions 0/1
                predicted = np.asarray(predicted)
+               # Compute metrics and print them
                cm = confusion_matrix(_y2, predicted,labels=[0,1])
                tp = cm[0][0]
                fn = cm[0][1]
@@ -353,6 +378,7 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                specificity = tn/float(tn+fp)
                f1 = 2*float(precision*recall)/float(precision+recall)
                accuracy = accuracy_score(_y2, predicted)
+               
                print('TP: {}, TN: {}, FP: {}, FN: {}'.format(tp,tn,fp,fn))
                print('TPR: {}, TNR: {}, FPR: {}, FNR: {}'.format(tpr,tnr,fpr,fnr))   
                print('Sensitivity/Recall: {}'.format(recall))
@@ -360,6 +386,8 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                print('Precision: {}'.format(precision))
                print('F1-measure: {}'.format(f1))
                print('Accuracy: {}'.format(accuracy))
+               
+               # Store the metrics for this epoch
                sensitivities.append(tp/float(tp+fn))
                specificities.append(tn/float(tn+fp))
                accuracies.append(accuracy)
@@ -374,12 +402,5 @@ if __name__ == '__main__':
         os.makedirs('models')
     if not os.path.exists('weights'):
         os.makedirs('weights')
-    model_file = 'models/exp_'
-    weights_file = 'weights/exp_'
-    batch_norm = True
-    learning_rate = 0.001
-    mini_batch_size = 0
-    w0 = 2
-    epochs = 3000
-  
-    main(learning_rate, mini_batch_size, batch_norm, w0, epochs, model_file, weights_file)
+
+    main()

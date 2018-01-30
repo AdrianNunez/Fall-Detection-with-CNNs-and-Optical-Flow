@@ -23,8 +23,28 @@ from keras.layers.advanced_activations import ELU
 
 data_folder = '/ssd_drive/UR_Fall_OF/'
 mean_file = '/ssd_drive/flow_mean.mat'
+model_file = 'models/exp_'
+weights_file = 'weights/exp_'
 L = 10
 num_features = 4096
+batch_norm = True
+learning_rate = 0.0001
+mini_batch_size = 0
+weight_0 = 1
+epochs = 6000
+# Path to the weights of the UCF101 pre-training for the VGG16
+vgg_16_weights = 'weights.h5'
+# Balance the number of positive and negative samples
+save_plots = True
+features_file = 'features_urfd.h5'
+labels_file = 'labels_urfd.h5'
+# Key for hdf5 files
+features_key = 'features'
+labels_key = 'labels'
+
+save_features = True
+# Name of the experiment
+exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, weight_0)
         
 def plot_training_info(case, metrics, save, history):
     '''
@@ -165,22 +185,7 @@ def saveFeatures(feature_extractor, features_file, labels_file, features_key, la
     h5features.close()
     h5labels.close()
             
-def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_file, weights_file):
-    # Name of the experiment
-    exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, w0)
-    # Path to the weights of the UCF101 pre-training for the VGG16
-    vgg_16_weights = 'weights.h5'
-    # Balance the number of positive and negative samples
-    balance_dataset = True
-    save_plots = True
-    
-    features_file = 'features_urfd.h5'
-    labels_file = 'labels_urfd.h5'
-    features_key = 'features'
-    labels_key = 'labels'
-    # Whether to save the features in a jdf5 file o use the available ones
-    save_features = True
-
+def main():
     # =============================================================================================================
     # VGG-16 ARCHITECTURE
     # =============================================================================================================
@@ -258,8 +263,7 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
         
     # =============================================================================================================
     # TRAINING
-    # =============================================================================================================
-        
+    # =============================================================================================================    
     adam = Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0005)
     model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])
     do_training = True   
@@ -305,21 +309,19 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
             X = np.concatenate((X_full[train_index_falls, ...], X_full[train_index_nofalls, ...]))
             _y = np.concatenate((_y_full[train_index_falls, ...], _y_full[train_index_nofalls, ...]))
             X2 = np.concatenate((X_full[test_index_falls, ...], X_full[test_index_nofalls, ...]))
-            _y2 = np.concatenate((_y_full[test_index_falls, ...], _y_full[test_index_nofalls, ...]))
-
-            all0 = np.asarray(np.where(_y==0)[0])
-            all1 = np.asarray(np.where(_y==1)[0])   
+            _y2 = np.concatenate((_y_full[test_index_falls, ...], _y_full[test_index_nofalls, ...]))   
             
             # Balance the number of positive and negative samples so that there is the same amount of each of them
-            if balance_dataset:
-                if len(all0) < len(all1):
-                    all1 = np.random.choice(all1, len(all0), replace=False)
-                else:
-                    all0 = np.random.choice(all0, len(all1), replace=False)
-                allin = np.concatenate((all0.flatten(),all1.flatten()))
-                allin.sort()
-                X = X[allin,...]
-                _y = _y[allin]
+            all0 = np.asarray(np.where(_y==0)[0])
+            all1 = np.asarray(np.where(_y==1)[0])  
+            if len(all0) < len(all1):
+                all1 = np.random.choice(all1, len(all0), replace=False)
+            else:
+                all0 = np.random.choice(all0, len(all1), replace=False)
+            allin = np.concatenate((all0.flatten(),all1.flatten()))
+            allin.sort()
+            X = X[allin,...]
+            _y = _y[allin]
 
             # ==================== CLASSIFIER ========================
             extracted_features = Input(shape=(num_features,), dtype='float32', name='input')
@@ -344,8 +346,8 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
             classifier.compile(optimizer=adam, loss='binary_crossentropy',  metrics=['accuracy'])
             
             # ==================== TRAINING ========================     
-            # weighting of each class: only the fall class gets a higher weight
-            class_weight = {0:weight_0, 1:1}
+            # weighting of each class: only the fall class gets a different weight
+            class_weight = {0: weight_0, 1: 1}
             # Batch training
             if mini_batch_size == 0:
                 history = classifier.fit(X,_y, validation_data=(X2,_y2), batch_size=X.shape[0], nb_epoch=epochs, shuffle='batch', class_weight=class_weight)
@@ -362,8 +364,7 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                    else:
                        predicted[i] = 1
                # Array of predictions 0/1
-               predicted = np.asarray(predicted).astype(int)
-               
+               predicted = np.asarray(predicted).astype(int)   
                # Compute metrics and print them
                cm = confusion_matrix(_y2, predicted,labels=[0,1])
                tp = cm[0][0]
@@ -407,12 +408,5 @@ if __name__ == '__main__':
         os.makedirs('models')
     if not os.path.exists('weights'):
         os.makedirs('weights')
-    model_file = 'models/exp_'
-    weights_file = 'weights/exp_'
-    batch_norm = True
-    learning_rate = 0.0001
-    mini_batch_size = 0
-    w0 = 1
-    epochs = 6000
-  
-    main(learning_rate, mini_batch_size, batch_norm, w0, epochs, model_file, weights_file)
+        
+    main()
