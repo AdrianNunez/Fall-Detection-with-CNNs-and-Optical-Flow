@@ -43,7 +43,27 @@ Necessary files:
 
 #### 0. Using your own dataset
 
-If you want to use your own dataset you need to have a directory with two subfolders: one called 'Falls' and the other one 'NotFalls'. Inside each of them there should be a folder for each fall/"not fall" video, where the images of the video are stored.
+If you want to use your own dataset you need to have a directory with two subfolders: one called 'Falls' and the other one 'NotFalls'. Inside each of them there should be a folder for each fall/"not fall" video, where the images of the video are stored. Example of the directory tree used:
+
+```
+fall-dataset\
+		Falls\
+			fall0\
+				flow_x_00001.jpg
+				flow_x_00002.jpg
+				...
+		NotFalls\
+			notfall0\
+				flow_x_00001.jpg
+				flow_x_00002.jpg
+				...
+```
+
+#### 1. Download the code and change the paths
+
+After downloading the code you will have to change the paths to adapt to your system and dataset. For each 'temporalnetxxx.py' script, in the very first lines, we have included several variables. Among them you can find 'data_folder', 'mean_file' and 'vgg_16_weights', that must point to the folder of your dataset, the [mean file](https://drive.google.com/file/d/0B4i3D0pfGJjYTllxc0d2NGUyc28/view?usp=sharing) of the network and the path to the [weights of the VGG16 network](https://drive.google.com/file/d/0B4i3D0pfGJjYNWxYTVUtNGtRcUE/view?usp=sharing). Then, to save the model and the weights after the training you have the paths 'model_file' and 'weights_file'. Finally, 'features_file' and 'labels_file' are the paths to the hdf5 files where the extracted features from the VGG16 CNN are going to be stored.
+
+After that we include some variables related to the training of the network, such as the batch size or the weight to be applied to the class 0. Then, the variables 'save_plots' and 'save_features', to save the plots created during training and validation and to save the weights extracted from the VGG16, respectively. 'save_features' should be True the first time that the script is used and False after that. Take into account that if you run the script with the True value set, previous features will be erased. 
 
 #### x. Reproducing the experiment with different lighting conditions (Section 4.5 of the paper)
 

@@ -21,10 +21,15 @@ import gc
 from sklearn.model_selection import KFold
 from keras.layers.advanced_activations import ELU
 
+# CHANGE THESE VARIABLES
 data_folder = '/ssd_drive/UR_Fall_OF/'
 mean_file = '/ssd_drive/flow_mean.mat'
+vgg_16_weights = 'weights.h5'
 model_file = 'models/exp_'
 weights_file = 'weights/exp_'
+features_file = 'features_urfd.h5'
+labels_file = 'labels_urfd.h5'
+
 L = 10
 num_features = 4096
 batch_norm = True
@@ -33,11 +38,10 @@ mini_batch_size = 0
 weight_0 = 1
 epochs = 6000
 # Path to the weights of the UCF101 pre-training for the VGG16
-vgg_16_weights = 'weights.h5'
+
 # Balance the number of positive and negative samples
 save_plots = True
-features_file = 'features_urfd.h5'
-labels_file = 'labels_urfd.h5'
+
 # Key for hdf5 files
 features_key = 'features'
 labels_key = 'labels'

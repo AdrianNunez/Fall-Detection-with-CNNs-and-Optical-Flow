@@ -21,10 +21,17 @@ import gc
 from sklearn.model_selection import KFold
 from keras.layers.advanced_activations import ELU
 
+# CHANGE THESE VARIABLES
 data_folder = '/ssd_drive/FDD_Fall_OF_D100/'
 mean_file = '/ssd_drive/flow_mean.mat'
+vgg_16_weights = 'weights.h5'
 model_file = 'models/exp_'
 weights_file = 'weights/exp_'
+features_file = 'features_fdd.h5'
+labels_file = 'labels_fdd.h5'
+features_key = 'features'
+labels_key = 'labels'
+
 L = 10 
 num_features = 4096
 batch_norm = True
@@ -32,17 +39,10 @@ learning_rate = 0.001
 mini_batch_size = 0
 weight_0 = 2
 epochs = 3000
-# Path to the weights of the UCF101 pre-training for the VGG16
-vgg_16_weights = 'weights.h5'
-# Balance the number of positive and negative samples
+
 save_plots = True
-features_file = 'features_fdd.h5'
-labels_file = 'labels_fdd.h5'
-# Key for hdf5 files
-features_key = 'features'
-labels_key = 'labels'
-# Whether to save the features in a jdf5 file o use the available ones
 save_features = True
+
 # Name of the experiment
 exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, weight_0)
      
