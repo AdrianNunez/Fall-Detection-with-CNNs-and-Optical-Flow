@@ -22,8 +22,6 @@ If you find the code useful for your research, please, cite our paper:
 
 ```
 
-We provide the following material to replicate the experiments.
-
 ### Getting started
 
 The repository contains the following files:
@@ -32,14 +30,22 @@ The repository contains the following files:
 
 * **brightness.py** contains the script to generate the images used in the experiment of section 4.5 of the paper.
 
+* **requirements.txt**: file for installing all the necessary python packages.
+
 ___
 
 ### Reproducing the experiments
 
 Necessary files:
 
-* [Weights of the VGG16 network](https://drive.google.com/file/d/0B4i3D0pfGJjYNWxYTVUtNGtRcUE/view?usp=sharing). Weights of a pre-trained VGG16 in the UCF101 Action Recognition dataset using optical flow stacks.
-* [Mean file](https://drive.google.com/file/d/0B4i3D0pfGJjYTllxc0d2NGUyc28/view?usp=sharing).
+* [Weights of the VGG16 network](https://drive.google.com/file/d/0B4i3D0pfGJjYNWxYTVUtNGtRcUE/view?usp=sharing). Weights of a pre-trained VGG16 in the UCF101 Action Recognition dataset using optical flow stacks. In the temporalneturfd.py, temporalnetfdd.py, temporalnetmulticam.py and temporalnetgeneral.py scripts there is a variable called 'vgg_16_weights' to set the paths to the weights, wherever you store them.
+* [Mean file](https://drive.google.com/file/d/0B4i3D0pfGJjYTllxc0d2NGUyc28/view?usp=sharing). In the temporalneturfd.py, temporalnetfdd.py, temporalnetmulticam.py and temporalnetgeneral.py scripts there is a variable called 'mean_file' to set the paths to the weights, wherever you store them.
+
+All the experiments were done under Ubuntu 16.04 Operating System, using Python 2.7 and OpenCV 3.1.0. All the necessary python packages have been included in the **requirements.txt** file. Use the following command to install them in your virtual environment:
+
+```
+pip install -r requirements.txt
+```
 
 #### 0. Using your own dataset
 
@@ -65,7 +71,15 @@ After downloading the code you will have to change the paths to adapt to your sy
 
 After that we include some variables related to the training of the network, such as the batch size or the weight to be applied to the class 0. Then, the variables 'save_plots' and 'save_features', to save the plots created during training and validation and to save the weights extracted from the VGG16, respectively. 'save_features' should be True the first time that the script is used and False after that. Take into account that if you run the script with the True value set, previous features will be erased. 
 
-#### x. Reproducing the experiment with different lighting conditions (Section 4.5 of the paper)
+#### 2. Executing the code
+
+Execute the code by calling:
+
+```
+python temporalneturfd.py
+```
+
+#### A. Reproducing the experiment with different lighting conditions (Section 4.5 of the paper)
 
 'brightness.py' is required to darken or adding a lighting change to the original images of any dataset. 
 

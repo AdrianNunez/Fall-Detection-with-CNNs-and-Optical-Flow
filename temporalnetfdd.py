@@ -41,7 +41,7 @@ weight_0 = 2
 epochs = 3000
 
 save_plots = True
-save_features = True
+save_features = False
 
 # Name of the experiment
 exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, weight_0)

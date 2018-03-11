@@ -30,6 +30,9 @@ weights_file = 'weights/exp_'
 features_file = 'features_urfd.h5'
 labels_file = 'labels_urfd.h5'
 
+features_key = 'features'
+labels_key = 'labels'
+
 L = 10
 num_features = 4096
 batch_norm = True
@@ -37,16 +40,10 @@ learning_rate = 0.0001
 mini_batch_size = 0
 weight_0 = 1
 epochs = 6000
-# Path to the weights of the UCF101 pre-training for the VGG16
 
-# Balance the number of positive and negative samples
 save_plots = True
+save_features = False
 
-# Key for hdf5 files
-features_key = 'features'
-labels_key = 'labels'
-
-save_features = True
 # Name of the experiment
 exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, weight_0)
         
@@ -188,6 +185,41 @@ def saveFeatures(feature_extractor, features_file, labels_file, features_key, la
         cont += flow.shape[0]
     h5features.close()
     h5labels.close()
+    
+def test_video(feature_extractor, video_path, ground_truth):
+    # Load the mean file to subtract to the images
+    d = sio.loadmat(mean_file)
+    flow_mean = d['image_mean']
+    
+    x_images = glob.glob(video_path + '/flow_x*.jpg')
+    x_images.sort()
+    y_images = glob.glob(video_path + '/flow_y*.jpg')
+    y_images.sort()
+    nb_stacks = len(x_images)-L+1
+    # Here nb_stacks optical flow stacks will be stored
+    flow = np.zeros(shape=(224,224,2*L,nb_stacks), dtype=np.float64)
+    gen = generator(x_images,y_images)
+    for i in range(len(x_images)):
+        flow_x_file, flow_y_file = gen.next()
+        img_x = cv2.imread(flow_x_file, cv2.IMREAD_GRAYSCALE)
+        img_y = cv2.imread(flow_y_file, cv2.IMREAD_GRAYSCALE)
+        # Assign an image i to the jth stack in the kth position, but also in the j+1th stack in the k+1th position and so on (for sliding window) 
+        for s in list(reversed(range(min(10,i+1)))):
+            if i-s < nb_stacks:
+                flow[:,:,2*s,  i-s] = img_x
+                flow[:,:,2*s+1,i-s] = img_y
+        del img_x,img_y
+        gc.collect()
+    flow = flow - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
+    flow = np.transpose(flow, (3, 2, 0, 1)) 
+    predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
+    truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
+    # Process each stack: do the feed-forward pass
+    for i in range(flow.shape[0]):
+        prediction = feature_extractor.predict(np.expand_dims(flow[i, ...],0))
+        predictions[i, ...] = prediction
+        truth[i] = ground_truth
+    return predictions, truth
             
 def main():
     # =============================================================================================================
