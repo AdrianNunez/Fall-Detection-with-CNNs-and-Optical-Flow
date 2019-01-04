@@ -1,0 +1,9 @@
+features*
+labels*
+models
+models/*
+weights
+weights/*
+plots
+plots/*
+weights.h5
