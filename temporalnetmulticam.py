@@ -7,7 +7,8 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import os
 from keras.models import Model, Sequential
-from keras.layers import Input, Convolution2D, MaxPooling2D, Flatten, Activation, Dense, Dropout, ZeroPadding2D
+from keras.layers import (Input, Convolution2D, MaxPooling2D, Flatten,
+			  Activation, Dense, Dropout, ZeroPadding2D)
 from keras.optimizers import Adam
 from keras.layers.normalization import BatchNormalization 
 from keras import backend as K
@@ -16,22 +17,58 @@ from sklearn.metrics import confusion_matrix, accuracy_score
 import h5py
 import scipy.io as sio
 import cv2
-import glob
-import gc
 from keras.layers.advanced_activations import ELU
 from keras.callbacks import EarlyStopping
 from sklearn.metrics import roc_curve, auc
 
-data_folder = '/ssd_drive/MultiCam_OF2/'
-mean_file = '/ssd_drive/flow_mean.mat'
+# CHANGE THESE VARIABLES ---
+data_folder = '/home/anunez/MultiCam_opticalflow/'
+mean_file = '/home/anunez/flow_mean.mat'
+vgg_16_weights = 'weights.h5'
+save_features = True
+save_plots = True
+# Set to 'True' if you want to restore a previous trained models
+# Training is skipped and test is done
+import glob
+import gc
+		if mini_batch_size == 0:
+			history = classifier.fit(X,_y, 
+						validation_data=(X2,_y2),
+						batch_size=X.shape[0],
+						nb_epoch=epochs,
+use_checkpoint = False
+# --------------------------
+
+best_model_path = 'models/'
+weights_file = 'weights/exp_'
+plots_folder = 'plots/'
+checkpoint_path = 'models/fold_'
+
+features_file = 'features_multicam.h5'
+labels_file = 'labels_multicam.h5'
+features_key = 'features'
+labels_key = 'labels'
+
 L = 10
 num_features = 4096
+batch_norm = True
+learning_rate = 0.01
+mini_batch_size = 1024
+weight_0 = 1
+epochs = 3000
+
+# Name of the experiment
+exp = 'multicam_lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate,
+					       mini_batch_size,
+					       batch_norm,
+					       weight_0)
         
 def plot_training_info(case, metrics, save, history):
     '''
     Function to create plots for train and validation loss and accuracy
     Input:
-    * case: name for the plot, an 'accuracy.png' or 'loss.png' will be concatenated after the name.
+    * case: name for the plot, an 'accuracy.png' or 'loss.png' 
+	will be concatenated after the name.
     * metrics: list of metrics to store: 'loss' and/or 'accuracy'
     * save: boolean to store the plots or only show them.
     * history: History object returned by the Keras fit function.
@@ -72,19 +109,28 @@ def plot_training_info(case, metrics, save, history):
  
 def generator(list1, lits2):
     '''
-    Auxiliar generator: returns the ith element of both given list with each call to next() 
+    Auxiliar generator: returns the ith element of both given list with
+	 each call to next() 
     '''
     for x,y in zip(list1,lits2):
         yield x, y
           
-def saveFeatures(feature_extractor, features_file, labels_file, features_key, labels_key):
+def saveFeatures(feature_extractor,
+		 features_file,
+		 labels_file,
+		 features_key, 
+		 labels_key):
     '''
-    Function to load the optical flow stacks, do a feed-forward through the feature extractor (VGG16) and
-    store the output feature vectors in the file 'features_file' and the labels in 'labels_file'.
+    Function to load the optical flow stacks, do a feed-forward through the
+	 feature extractor (VGG16) and
+    store the output feature vectors in the file 'features_file' and the 
+	labels in 'labels_file'.
     Input:
     * feature_extractor: model VGG16 until the fc6 layer.
-    * features_file: path to the hdf5 file where the extracted features are going to be stored
-    * labels_file: path to the hdf5 file where the labels of the features are going to be stored
+    * features_file: path to the hdf5 file where the extracted features are
+	 going to be stored
+    * labels_file: path to the hdf5 file where the labels of the features
+	 are going to be stored
     * features_key: name of the key for the hdf5 file to store the features
     * labels_key: name of the key for the hdf5 file to store the labels
     '''
@@ -132,9 +178,11 @@ def saveFeatures(feature_extractor, features_file, labels_file, features_key, la
         for camera, nb_camera in zip(cameras, range(1, len(cameras)+1)):
             h5features[stage].create_group('cam{}'.format(nb_camera))
             h5labels[stage].create_group('cam{}'.format(nb_camera))
-            not_falls = glob.glob(camera + '/NotFalls/notfall*'.format(nb_camera))
+            not_falls = glob.glob(camera + '/NotFalls/notfall*'.format(
+								nb_camera))
             not_falls.sort()
-            print(camera + '/NotFalls/notfall*'.format(nb_camera), len(not_falls))
+            print(camera + '/NotFalls/notfall*'.format(nb_camera),
+						       len(not_falls))
             for not_fall in not_falls:
                 label = 1
                 x_images = glob.glob(not_fall + '/flow_x*.jpg')
@@ -143,8 +191,18 @@ def saveFeatures(feature_extractor, features_file, labels_file, features_key, la
                 y_images.sort()
                 nb_stacks = int(len(x_images))-L+1
                 
-                features_notfall = h5features[stage]['cam{}'.format(nb_camera)].create_dataset('notfall{:04}'.format(idx_nofalls), shape=(nb_stacks, num_features), dtype='float64')
-                labels_notfall = h5labels[stage]['cam{}'.format(nb_camera)].create_dataset('notfall{:04}'.format(idx_nofalls), shape=(nb_stacks, 1), dtype='float64')
+                features_notfall = h5features[stage][
+					'cam{}'.format(nb_camera)
+					].create_dataset(
+					'notfall{:04}'.format(idx_nofalls),
+					 shape=(nb_stacks, num_features),
+					 dtype='float64')
+                labels_notfall = h5labels[stage][
+					'cam{}'.format(nb_camera)
+					].create_dataset(
+					'notfall{:04}'.format(idx_nofalls),
+					 shape=(nb_stacks, 1),
+					 dtype='float64')
                 idx_nofalls += 1
                 
                 # NO FALL
@@ -160,17 +218,21 @@ def saveFeatures(feature_extractor, features_file, labels_file, features_key, la
                             flow[:,:,2*s+1,i-s] = img_y
                     del img_x,img_y
                     gc.collect()
-                flow = flow - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
+                flow = flow - np.tile(flow_mean[...,np.newaxis],
+				     (1, 1, 1, flow.shape[3]))
                 flow = np.transpose(flow, (3, 2, 0, 1)) 
-                predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
+                predictions = np.zeros((flow.shape[0], num_features),
+					dtype=np.float64)
                 truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
                 for i in range(flow.shape[0]):
-                    prediction = feature_extractor.predict(np.expand_dims(flow[i, ...],0))
+                    prediction = feature_extractor.predict(
+						np.expand_dims(flow[i, ...],0))
                     predictions[i, ...] = prediction
                     truth[i] = label
                 features_notfall[:,:] = predictions
                 labels_notfall[:,:] = truth
-                del predictions, truth, flow, features_notfall, labels_notfall, x_images, y_images, nb_stacks
+                del (predictions, truth, flow, features_notfall,
+		     labels_notfall, x_images, y_images, nb_stacks)
                 gc.collect()
                 
             if stage == 'chute24':
@@ -191,8 +253,18 @@ def saveFeatures(feature_extractor, features_file, labels_file, features_key, la
                 y_images.sort()
                 nb_stacks = int(len(x_images))-L+1
                 
-                features_fall = h5features[stage]['cam{}'.format(nb_camera)].create_dataset('fall{:04}'.format(idx_falls), shape=(nb_stacks, num_features), dtype='float64')
-                labels_fall = h5labels[stage]['cam{}'.format(nb_camera)].create_dataset('fall{:04}'.format(idx_falls), shape=(nb_stacks, 1), dtype='float64')
+                features_fall = h5features[stage][
+					'cam{}'.format(nb_camera)
+					].create_dataset(
+					'fall{:04}'.format(idx_falls),
+					 shape=(nb_stacks, num_features),
+					 dtype='float64')
+                labels_fall = h5labels[stage][
+					'cam{}'.format(nb_camera)
+					].create_dataset(
+					'fall{:04}'.format(idx_falls),
+					 shape=(nb_stacks, 1),
+					 dtype='float64')
                 idx_falls += 1
                 flow = np.zeros(shape=(224,224,2*L,nb_stacks), dtype=np.float64)
                 
@@ -207,12 +279,15 @@ def saveFeatures(feature_extractor, features_file, labels_file, features_key, la
                             flow[:,:,2*s+1,i-s] = img_y
                     del img_x,img_y
                     gc.collect()
-                flow = flow - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
+                flow = flow - np.tile(flow_mean[...,np.newaxis],
+				      (1, 1, 1, flow.shape[3]))
                 flow = np.transpose(flow, (3, 2, 0, 1)) 
-                predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
+                predictions = np.zeros((flow.shape[0], num_features),
+					dtype=np.float64)
                 truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
                 for i in range(flow.shape[0]):
-                    prediction = feature_extractor.predict(np.expand_dims(flow[i, ...],0))
+                    prediction = feature_extractor.predict(
+						np.expand_dims(flow[i, ...],0))
                     predictions[i, ...] = prediction
                     truth[i] = label
                 features_fall[:,:] = predictions
@@ -222,24 +297,39 @@ def saveFeatures(feature_extractor, features_file, labels_file, features_key, la
     h5features.close()
     h5labels.close()
 
-def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_file, weights_file): 
-     # Name of the experiment
-    exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate, mini_batch_size, batch_norm, w0)
-    # Path to the weights of the UCF101 pre-training for the VGG16
-    vgg_16_weights = 'weights.h5'
-    # Balance the number of positive and negative samples
-    save_plots = True
-    
-    features_file = 'features_multicam.h5'
-    labels_file = 'labels_multicam.h5'
-    features_key = 'features'
-    labels_key = 'labels'
-    # Whether to save the features in a jdf5 file o use the available ones
-    save_features = True
-           
-    # =============================================================================================================
+def load_dataset():
+    h5features = h5py.File(features_file, 'r')
+    h5labels = h5py.File(labels_file, 'r')
+  
+    # Load the data separated by cameras for cross-validation
+    stages = []
+    for i in range(1,25):
+        stages.append('chute{:02}'.format(i))
+    cams_x = []
+    cams_y = []
+    for stage, nb_stage in zip(stages, range(len(stages))):   
+        for cam, nb_cam in zip(h5features[stage].keys(), range(8)):
+            temp_x = []
+            temp_y = []
+            for key in h5features[stage][cam].keys():
+                temp_x.append(np.asarray(h5features[stage][cam][key]))
+                temp_y.append(np.asarray(h5labels[stage][cam][key]))
+            temp_x = np.concatenate(temp_x,axis=0)
+            temp_y = np.concatenate(temp_y,axis=0)
+            if nb_stage == 0:
+                cams_x.append(temp_x)
+                cams_y.append(temp_y)
+            else:
+                cams_x[nb_cam] = np.concatenate([cams_x[nb_cam],
+						 temp_x], axis=0)
+                cams_y[nb_cam] = np.concatenate([cams_y[nb_cam],
+						 temp_y], axis=0)
+    return cams_x, cams_y
+
+def main():          
+    # ========================================================================
     # VGG-16 ARCHITECTURE
-    # =============================================================================================================
+    # ========================================================================
     model = Sequential()
     
     model.add(ZeroPadding2D((1, 1), input_shape=(20, 224, 224)))
@@ -281,16 +371,19 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
     model.add(Flatten())
     model.add(Dense(4096, name='fc6', init='glorot_uniform'))
    
-    # =============================================================================================================
+    # ========================================================================
     # WEIGHT INITIALIZATION
-    # =============================================================================================================
-    layerscaffe = ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1', 'conv3_2', 'conv3_3', 'conv4_1', 'conv4_2', 'conv4_3', 'conv5_1', 'conv5_2', 'conv5_3', 'fc6', 'fc7', 'fc8']
+    # ========================================================================
+    layerscaffe = ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1',
+		   'conv3_2', 'conv3_3', 'conv4_1', 'conv4_2', 'conv4_3',
+		   'conv5_1', 'conv5_2', 'conv5_3', 'fc6', 'fc7', 'fc8']
     i = 0
     h5 = h5py.File(vgg_16_weights)
    
     layer_dict = dict([(layer.name, layer) for layer in model.layers])
 
-    # Copy the weights stored in the 'vgg_16_weights' file to the feature extractor part of the VGG16
+    # Copy the weights stored in the 'vgg_16_weights' file to the
+    # feature extractor part of the VGG16
     for layer in layerscaffe[:-3]:
         w2, b2 = h5['data'][layer]['0'], h5['data'][layer]['1']
         w2 = np.transpose(np.asarray(w2), (0,1,2,3))
@@ -309,49 +402,30 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
     layer_dict[layer].b.set_value(b2)
     i += 1
 
-    # =============================================================================================================
+    # ========================================================================
     # FEATURE EXTRACTION
-    # =============================================================================================================
+    # ========================================================================
     if save_features:
-        saveFeatures(model, features_file, labels_file, features_key, labels_key)
+        saveFeatures(model, features_file,
+		    labels_file, features_key,
+		    labels_key)
 
-    # =============================================================================================================
+    # ========================================================================
     # TRAINING
-    # =============================================================================================================
-    adam = Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-08, decay=0.0005)
-    model.compile(optimizer=adam, loss='categorical_crossentropy', metrics=['accuracy'])    
-    e = EarlyStopping(monitor='val_loss', min_delta=0, patience=100, verbose=0, mode='auto')
+    # ========================================================================
+    adam = Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999,
+		epsilon=1e-08, decay=0.0005)
+    model.compile(optimizer=adam, loss='categorical_crossentropy',
+		  metrics=['accuracy'])  
     do_training = True
     compute_metrics = True
     threshold = 0.5
     
     if do_training:
-        h5features = h5py.File(features_file, 'r')
-        h5labels = h5py.File(labels_file, 'r')
-  
-        # Load the data separated by cameras for cross-validation
-        stages = []
-        for i in range(1,25):
-            stages.append('chute{:02}'.format(i))
-        cams_x = []
-        cams_y = []
-        for stage, nb_stage in zip(stages, range(len(stages))):   
-            for cam, nb_cam in zip(h5features[stage].keys(), range(8)):
-                temp_x = []
-                temp_y = []
-                for key in h5features[stage][cam].keys():
-                    temp_x.append(np.asarray(h5features[stage][cam][key]))
-                    temp_y.append(np.asarray(h5labels[stage][cam][key]))
-                temp_x = np.concatenate(temp_x,axis=0)
-                temp_y = np.concatenate(temp_y,axis=0)
-                if nb_stage == 0:
-                    cams_x.append(temp_x)
-                    cams_y.append(temp_y)
-                else:
-                    cams_x[nb_cam] = np.concatenate([cams_x[nb_cam], temp_x], axis=0)
-                    cams_y[nb_cam] = np.concatenate([cams_y[nb_cam], temp_y], axis=0)
+        cams_x, cams_y = load_dataset() 
                     
-        # cams_x[nb_cam] contains all the optical flow stacks of the nb_cam camera
+        # cams_x[nb_cam] contains all the optical flow stacks of
+	# the nb_cam camera (where nb_cam is an integer from 0 to 24)
         sensitivities = []
         specificities = []
         aucs = []
@@ -367,9 +441,7 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
             train_x = cams_x[0:cam] + cams_x[cam+1:]
             train_y = cams_y[0:cam] + cams_y[cam+1:]
            
-           
-            X = []
-            _y = []
+            X, _y = [], []
             # Balance the positive and negative samples
             for cam_x, cam_y in zip(train_x, train_y):
                 all0 = np.asarray(np.where(cam_y==0)[0])
@@ -385,13 +457,15 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
             _y2 = np.asarray(test_y)
             
             # ==================== CLASSIFIER ========================               
-            extracted_features = Input(shape=(4096,), dtype='float32', name='input')
+            extracted_features = Input(shape=(num_features,),
+				       dtype='float32', name='input')
             if batch_norm:
-                x = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(extracted_features)
+                x = BatchNormalization(axis=-1, momentum=0.99,
+				       epsilon=0.001)(extracted_features)
                 x = Activation('relu')(x)
             else:
                 x = ELU(alpha=1.0)(extracted_features)
-                
+           
             x = Dropout(0.9)(x)
             x = Dense(4096, name='fc2', init='glorot_uniform')(x)
             if batch_norm:
@@ -399,23 +473,46 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                 x = Activation('relu')(x)
             else:
                 x = ELU(alpha=1.0)(x)
-                
             x = Dropout(0.8)(x)
             x = Dense(1, name='predictions', init='glorot_uniform')(x)
             x = Activation('sigmoid')(x)
             
-            classifier = Model(input=extracted_features, output=x, name='classifier')
-            classifier.compile(optimizer=adam, loss='binary_crossentropy',  metrics=['accuracy'])
+            classifier = Model(input=extracted_features,
+			       output=x, name='classifier')
+	    fold_best_model_path = best_model_path + 'fold_{}'.format(
+								fold_number)
+	    classifier.compile(optimizer=adam, loss='binary_crossentropy',
+			       metrics=['accuracy'])
             
-            # ==================== TRAINING ========================       
-            # weighting of each class: only the fall class gets a different weight
-            class_weight = {0:weight_0, 1:1}
+	    if not use_checkpoint:
+		# ==================== TRAINING ========================     
+		# weighting of each class: only the fall class gets
+		# a different weight
+		class_weight = {0: weight_0, 1: 1}
 
-            if mini_batch_size == 0:
-                history = classifier.fit(X, _y, validation_data=(X2, _y2), batch_size=X.shape[0], nb_epoch=epochs, shuffle=True, class_weight=class_weight, callbacks=[e])
-            else:
-                history = classifier.fit(X, _y, validation_data=(X2, _y2), batch_size=mini_batch_size, nb_epoch=epochs, shuffle=True, class_weight=class_weight, callbacks=[e])
-            plot_training_info(exp, ['accuracy', 'loss'], save_plots, history.history)
+		# callback definition
+		e = EarlyStopping(monitor='val_acc', min_delta=0, patience=100,
+				  mode='auto')
+		c = ModelCheckpoint(fold_best_model_path, monitor='val_acc',
+				    save_best_only=True,
+				    save_weights_only=False, mode='auto')
+		callbacks = [e, c]
+
+		# Batch training
+						shuffle='batch',
+						class_weight=class_weight,
+						callbacks=callbacks)
+		else:
+			history = classifier.fit(X,_y,
+						validation_data=(X2,_y2),
+						batch_size=mini_batch_size,
+						nb_epoch=epochs,
+						shuffle='batch',
+						class_weight=class_weight,
+						callbacks=callbacks)
+
+		plot_training_info(plots_folder + exp, ['accuracy', 'loss'],
+				   save_plots, history.history)
             
             # ==================== EVALUATION ========================        
             if compute_metrics:
@@ -448,7 +545,8 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                roc_auc = auc(fpr, tpr)
                
                print('TP: {}, TN: {}, FP: {}, FN: {}'.format(tp,tn,fp,fn))
-               print('TPR: {}, TNR: {}, FPR: {}, FNR: {}'.format(tpr,tnr,fpr,fnr))   
+               print('TPR: {}, TNR: {}, FPR: {}, FNR: {}'.format(
+							tpr,tnr,fpr,fnr))   
                print('Sensitivity/Recall: {}'.format(recall))
                print('Specificity: {}'.format(specificity))
                print('Precision: {}'.format(precision))
@@ -463,22 +561,18 @@ def main(learning_rate, mini_batch_size, batch_norm, weight_0, epochs, model_fil
                accuracies.append(accuracy)
 
         print('LEAVE-ONE-OUT RESULTS ===================')
-        print("Sensitivity: %.2f%% (+/- %.2f%%)" % (np.mean(sensitivities), np.std(sensitivities)))
-        print("Specificity: %.2f%% (+/- %.2f%%)" % (np.mean(specificities), np.std(specificities)))
+        print("Sensitivity: %.2f%% (+/- %.2f%%)" % (np.mean(sensitivities),
+							 np.std(sensitivities)))
+        print("Specificity: %.2f%% (+/- %.2f%%)" % (np.mean(specificities),
+							 np.std(specificities)))
+        print("Accuracy: %.2f%% (+/- %.2f%%)" % (np.mean(accuracies),
+							 np.std(accuracies)))
         print("AUC: %.2f%% (+/- %.2f%%)" % (np.mean(aucs), np.std(aucs)))
-        print("accuracy: %.2f%% (+/- %.2f%%)" % (np.mean(accuracies), np.std(accuracies)))
         
 if __name__ == '__main__':
-    if not os.path.exists('models'):
-        os.makedirs('models')
-    if not os.path.exists('weights'):
-        os.makedirs('weights')
-    model_file = 'models/exp_'
-    weights_file = 'weights/exp_'
-    batch_norm = True
-    learning_rate = 0.01
-    mini_batch_size = 1024
-    w0 = 1
-    epochs = 3000
-  
-    main(learning_rate, mini_batch_size, batch_norm, w0, epochs, model_file, weights_file)
+    if not os.path.exists(best_model_path):
+        os.makedirs(best_model_path)
+    if not os.path.exists(plots_folder):
+        os.makedirs(plots_folder)
+        
+    main()

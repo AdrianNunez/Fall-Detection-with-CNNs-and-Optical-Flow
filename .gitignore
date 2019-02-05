@@ -7,3 +7,4 @@ weights/*
 plots
 plots/*
 weights.h5
+flow_mean.mat

@@ -53,7 +53,7 @@ pip install -r requirements.txt
 
 #### 0. Using your own dataset
 
-If you want to use your own dataset you need to have a directory with two subfolders: one called 'Falls' and the other one 'NotFalls'. Inside each of them there should be a folder for each fall/"not fall" video, where the images of the video are stored. Example of the directory tree used:
+If you want to use your own dataset you need to have a directory with two subfolders: one called 'Falls' and the other one 'NotFalls'. Inside each of them there should be a folder for each fall/"not fall" video (name does not matter), where the images of the video are stored. Example of the directory tree used:
 
 ```
 fall-dataset\
@@ -104,8 +104,8 @@ python temporalneturfd.py
 These are the features extracted from the fc6 layer of the VGG16 network used for fine-tuning (vectors of size 4096). The instances are ordered so that the i-th element in the feature file has the i-th label of the labels file. For the Multicam dataset, the division inside each file is done by scenes, then by cameras.
 
 * UR Fall Dataset (URFD)
-  * [Features](https://drive.google.com/file/d/0B4i3D0pfGJjYa2dwclduMklLN2s/view?usp=sharing)
-  * [Labels](https://drive.google.com/file/d/0B4i3D0pfGJjYcUhIM3pzQkV4dHM/view?usp=sharing)
+  * [Features](https://drive.google.com/file/d/1JQg6mCrV_0lQR0MSUaRlD5VusF5MLRhB/view?usp=sharing)
+  * [Labels](https://drive.google.com/file/d/1EKTpI7BzlX4qQoAyph5d5cJ1jnWU3f6n/view?usp=sharing)
 * Multiple Cameras Fall Dataset (Multicam)*
   * [Features](https://drive.google.com/file/d/1Kfbm1RiKUr5q6S7Mq4LqTYGRyKyY_F91/view?usp=sharing) 
   * [Labels](https://drive.google.com/file/d/1krNC_QbGD4vE6XwEnuUdajtYy4_o4iaJ/view?usp=sharing)
@@ -117,12 +117,12 @@ These are the features extracted from the fc6 layer of the VGG16 network used fo
 
 ### Optical flow images
 
-We make downloadable the optical flow components used for the experiments if you want to re-train the network:
+We make downloadable the images (prepared to be converted to optical flow images) and the optical flow components used for the experiments in case you want to re-train the network:
 
-* [URFD optical flow images](https://drive.google.com/file/d/1D26r6xL7--GOByvE_fLspFFaOmp-s8Nl/view?usp=sharing)
+* [[URFD prepared images](https://drive.google.com/file/d/1V602ukgTI1biAxZmvle6DGPW7-i4436i/view?usp=sharing)][[URFD optical flow images](https://drive.google.com/file/d/1YhBljXOFHdqukZW0Zp6TPbQ-brsoz7ep/view?usp=sharing)]
 
 ### Checkpoints
 
 In order to reproduce the results, we make the checkpoints of each fold available here:
 
-* URFD [[Fold1](https://drive.google.com/file/d/1st02xocW_PZvadLHCPcOAIsXZgrU_t88/view?usp=sharing)][[Fold2](https://drive.google.com/file/d/1VGpJjR4nzE4jciegAuvXfz37rPLPG0I0/view?usp=sharing)][[Fold3](https://drive.google.com/file/d/1gqVJjx41FI0NxoYOU2swvruyYcP_Gakz/view?usp=sharing)][[Fold4](https://drive.google.com/file/d/1mESNjMKZmig7LzHTb85I99YKqN7vxz4q/view?usp=sharing)][[Fold5](https://drive.google.com/file/d/1d-aHtjXl7j57a9Rn3Q4iAbec5ElYM2mw/view?usp=sharing)][[All](https://drive.google.com/file/d/1P_vxqwc3lczgX5xwTLI_1K9yRii9OWKR/view?usp=sharing)]
+* URFD [[Fold1](https://drive.google.com/file/d/16usFQzITk0IsC29bTpLbI9BfghLzK6LV/view?usp=sharing)][[Fold2](https://drive.google.com/file/d/12eXc4YLse2vRUYpiJOg9nUCAzOWef2Cf/view?usp=sharing)][[Fold3](https://drive.google.com/file/d/1zROWzLwnChSJb_W0stZ4SdUoFtv9mqjy/view?usp=sharing)][[Fold4](https://drive.google.com/file/d/1COZzqGFG124IuOomHFM20L7jOqEsgCYw/view?usp=sharing)][[Fold5](https://drive.google.com/file/d/10-MUWZYw1nf-UcrpQRVgq307qRfGEvGE/view?usp=sharing)][[All](https://drive.google.com/file/d/1PQ410mJXhGTbM256AgITNYyR5noh1xJW/view?usp=sharing)]

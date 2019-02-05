@@ -6,33 +6,43 @@ import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import os
-from keras.models import load_model, Model, Sequential
-from keras.layers import (Input, Convolution2D, MaxPooling2D, Flatten,
-		 	  Activation, Dense, Dropout, ZeroPadding2D)
-from keras.optimizers import Adam
-from keras.layers.normalization import BatchNormalization 
-from keras.callbacks import EarlyStopping, ModelCheckpoint
-from keras import backend as K
-K.set_image_dim_ordering('th')
-from sklearn.metrics import confusion_matrix, accuracy_score
 import h5py
 import scipy.io as sio
 import cv2
 import glob
 import gc
-from sklearn.model_selection import KFold
+
+from keras.models import load_model, Model, Sequential
+from keras.layers import (Input, Conv2D, MaxPooling2D, Flatten,
+		 	  Activation, Dense, Dropout, ZeroPadding2D)
+from keras.optimizers import Adam
+from keras.layers.normalization import BatchNormalization 
+from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras import backend as K
+from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.model_selection import KFold, StratifiedShuffleSplit
 from keras.layers.advanced_activations import ELU
 
-# CHANGE THESE VARIABLES
-data_folder = '/home/anunez/UR_Fall_opticalflow/'
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
+
+# CHANGE THESE VARIABLES ---
+data_folder = '/home/anunez/URFD_opticalflow/'
 mean_file = '/home/anunez/flow_mean.mat'
-vgg_16_weights = '/home/anunez/weights.h5'
-model_file = 'models/exp_'
-features_file = 'features_urfd.h5'
-labels_file = 'labels_urfd.h5'
+vgg_16_weights = 'weights.h5'
+save_features = False
+save_plots = True
+
+# Set to 'True' if you want to restore a previous trained models
+# Training is skipped and test is done
+use_checkpoint = False # Set to True or False
+# --------------------------
+
 best_model_path = 'models/'
 plots_folder = 'plots/'
+checkpoint_path = 'models/fold_'
 
+features_file = 'features_urfd_tf.h5'
+labels_file = 'labels_urfd_tf.h5'
 features_key = 'features'
 labels_key = 'labels'
 
@@ -41,20 +51,14 @@ num_features = 4096
 batch_norm = True
 learning_rate = 0.0001
 mini_batch_size = 0
-weight_0 = 1
+weight_0 = 1.0
 epochs = 1000
 
-save_plots = True
-save_features = False
-
-# Set to 'True' if you want to restore a previous trained models
-# Training is skipped and test is done
-use_checkpoint = True
-checkpoint_path = 'models/fold_'
-
 # Name of the experiment
-exp = 'lr{}_batchs{}_batchnorm{}_w0_{}'.format(
-		learning_rate, mini_batch_size, batch_norm, weight_0)
+exp = 'urfd_lr{}_batchs{}_batchnorm{}_w0_{}'.format(learning_rate,
+					       mini_batch_size,
+					       batch_norm,
+					       weight_0)
         
 def plot_training_info(case, metrics, save, history):
     '''
@@ -168,9 +172,11 @@ def saveFeatures(feature_extractor,
     h5features = h5py.File(features_file,'w')
     h5labels = h5py.File(labels_file,'w')
     dataset_features = h5features.create_dataset(features_key,
-			 shape=(nb_total_stacks, num_features), dtype='float64')
+			 shape=(nb_total_stacks, num_features),
+			 dtype='float64')
     dataset_labels = h5labels.create_dataset(labels_key,
-			 shape=(nb_total_stacks, 1), dtype='float64')  
+			 shape=(nb_total_stacks, 1),
+			 dtype='float64')  
     cont = 0
     
     for folder, label in zip(folders, classes):
@@ -199,8 +205,7 @@ def saveFeatures(feature_extractor,
         # Subtract mean
         flow = flow - np.tile(flow_mean[...,np.newaxis],
 			      (1, 1, 1, flow.shape[3]))
-        # Transpose for channel ordering (Theano in this case)
-        flow = np.transpose(flow, (3, 2, 0, 1)) 
+        flow = np.transpose(flow, (3, 0, 1, 2)) 
         predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
         truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
         # Process each stack: do the feed-forward pass and store
@@ -243,7 +248,7 @@ def test_video(feature_extractor, video_path, ground_truth):
         del img_x,img_y
         gc.collect()
     flow = flow - np.tile(flow_mean[...,np.newaxis], (1, 1, 1, flow.shape[3]))
-    flow = np.transpose(flow, (3, 2, 0, 1)) 
+    flow = np.transpose(flow, (3, 0, 1, 2)) 
     predictions = np.zeros((flow.shape[0], num_features), dtype=np.float64)
     truth = np.zeros((flow.shape[0], 1), dtype=np.float64)
     # Process each stack: do the feed-forward pass
@@ -259,44 +264,44 @@ def main():
     # ========================================================================
     model = Sequential()
     
-    model.add(ZeroPadding2D((1, 1), input_shape=(20, 224, 224)))
-    model.add(Convolution2D(64, 3, 3, activation='relu', name='conv1_1'))
+    model.add(ZeroPadding2D((1, 1), input_shape=(224, 224, 20)))
+    model.add(Conv2D(64, (3, 3), activation='relu', name='conv1_1'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(64, 3, 3, activation='relu', name='conv1_2'))
+    model.add(Conv2D(64, (3, 3), activation='relu', name='conv1_2'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
 
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(128, 3, 3, activation='relu', name='conv2_1'))
+    model.add(Conv2D(128, (3, 3), activation='relu', name='conv2_1'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(128, 3, 3, activation='relu', name='conv2_2'))
+    model.add(Conv2D(128, (3, 3), activation='relu', name='conv2_2'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
 
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(256, 3, 3, activation='relu', name='conv3_1'))
+    model.add(Conv2D(256, (3, 3), activation='relu', name='conv3_1'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(256, 3, 3, activation='relu', name='conv3_2'))
+    model.add(Conv2D(256, (3, 3), activation='relu', name='conv3_2'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(256, 3, 3, activation='relu', name='conv3_3'))
+    model.add(Conv2D(256, (3, 3), activation='relu', name='conv3_3'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
 
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu', name='conv4_1'))
+    model.add(Conv2D(512, (3, 3), activation='relu', name='conv4_1'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu', name='conv4_2'))
+    model.add(Conv2D(512, (3, 3), activation='relu', name='conv4_2'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu', name='conv4_3'))
+    model.add(Conv2D(512, (3, 3), activation='relu', name='conv4_3'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
 
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu', name='conv5_1'))
+    model.add(Conv2D(512, (3, 3), activation='relu', name='conv5_1'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu', name='conv5_2'))
+    model.add(Conv2D(512, (3, 3), activation='relu', name='conv5_2'))
     model.add(ZeroPadding2D((1, 1)))
-    model.add(Convolution2D(512, 3, 3, activation='relu', name='conv5_3'))
+    model.add(Conv2D(512, (3, 3), activation='relu', name='conv5_3'))
     model.add(MaxPooling2D((2, 2), strides=(2, 2)))
     
     model.add(Flatten())
-    model.add(Dense(num_features, name='fc6', init='glorot_uniform'))
+    model.add(Dense(num_features, name='fc6', kernel_initializer='glorot_uniform'))
     
     # ========================================================================
     # WEIGHT INITIALIZATION
@@ -304,7 +309,7 @@ def main():
     layerscaffe = ['conv1_1', 'conv1_2', 'conv2_1', 'conv2_2', 'conv3_1',
 		   'conv3_2', 'conv3_3', 'conv4_1', 'conv4_2', 'conv4_3',
 		   'conv5_1', 'conv5_2', 'conv5_3', 'fc6', 'fc7', 'fc8']
-    h5 = h5py.File(vgg_16_weights)
+    h5 = h5py.File(vgg_16_weights, 'r')
     
     layer_dict = dict([(layer.name, layer) for layer in model.layers])
 
@@ -312,19 +317,23 @@ def main():
     # feature extractor part of the VGG16
     for layer in layerscaffe[:-3]:
         w2, b2 = h5['data'][layer]['0'], h5['data'][layer]['1']
-        w2 = np.transpose(np.asarray(w2), (0,1,2,3))
-        w2 = w2[:, :, ::-1, ::-1]
+        #w2 = np.transpose(np.asarray(w2), (0,1,2,3))
+        #w2 = w2[:, :, ::-1, ::-1]
+	w2 = np.transpose(np.asarray(w2), (2,3,1,0))
+	w2 = w2[::-1, ::-1, :, :]
         b2 = np.asarray(b2)
-        layer_dict[layer].W.set_value(w2)
-        layer_dict[layer].b.set_value(b2)
-      
+        #layer_dict[layer].W.set_value(w2)
+        #layer_dict[layer].b.set_value(b2)
+	layer_dict[layer].set_weights((w2, b2))
+    #sys.exit()
     # Copy the weights of the first fully-connected layer (fc6)
     layer = layerscaffe[-3]
     w2, b2 = h5['data'][layer]['0'], h5['data'][layer]['1']
     w2 = np.transpose(np.asarray(w2), (1,0))
     b2 = np.asarray(b2)
-    layer_dict[layer].W.set_value(w2)
-    layer_dict[layer].b.set_value(b2)
+    #layer_dict[layer].W.set_value(w2)
+    #layer_dict[layer].b.set_value(b2)
+    layer_dict[layer].set_weights((w2, b2))
 
     # ========================================================================
     # FEATURE EXTRACTION
@@ -338,7 +347,7 @@ def main():
     # TRAINING
     # ========================================================================    
     adam = Adam(lr=learning_rate, beta_1=0.9, beta_2=0.999,
-		epsilon=1e-08, decay=0.0005)
+		epsilon=1e-08)
     model.compile(optimizer=adam, loss='categorical_crossentropy',
 		  metrics=['accuracy'])
     do_training = True   
@@ -400,18 +409,32 @@ def main():
             _y2 = np.concatenate((_y_full[test_index_falls, ...],
 				  _y_full[test_index_nofalls, ...]))   
             
+            # Create a validation subset from the training set
+	    val_size = 100#int(X.shape[0]*0.01)
+	    trainval_split = KFold(n_splits=2)
+            trainval_split.get_n_splits(X_full[zeroes, ...])
+	    trainval_split = StratifiedShuffleSplit(n_splits=1,
+						   test_size=val_size,
+					 	   random_state=7)
+	    indices = trainval_split.split(X, np.argmax(_y, 1))
+	    train_indices, val_indices = indices.next()
+	    X_train, y_train = X[train_indices], _y[train_indices]
+	    X_val, y_val = X[val_indices], _y[val_indices]
+	    print('Training samples: {}, Validation samples: {}'.format(
+					len(train_indices), len(val_indices)))
+         
             # Balance the number of positive and negative samples so that
 	    # there is the same amount of each of them
-            all0 = np.asarray(np.where(_y==0)[0])
-            all1 = np.asarray(np.where(_y==1)[0])  
+            all0 = np.asarray(np.where(y_train==0)[0])
+            all1 = np.asarray(np.where(y_train==1)[0])   
             if len(all0) < len(all1):
                 all1 = np.random.choice(all1, len(all0), replace=False)
             else:
                 all0 = np.random.choice(all0, len(all1), replace=False)
             allin = np.concatenate((all0.flatten(),all1.flatten()))
             allin.sort()
-            X = X[allin,...]
-            _y = _y[allin]
+            X_train = X_train[allin,...]
+            y_train = y_train[allin]
 
             # ==================== CLASSIFIER ========================
             extracted_features = Input(shape=(num_features,),
@@ -424,19 +447,19 @@ def main():
                 x = ELU(alpha=1.0)(extracted_features)
            
             x = Dropout(0.9)(x)
-            x = Dense(4096, name='fc2', init='glorot_uniform')(x)
+            x = Dense(4096, name='fc2', kernel_initializer='glorot_uniform')(x)
             if batch_norm:
                 x = BatchNormalization(axis=-1, momentum=0.99, epsilon=0.001)(x)
                 x = Activation('relu')(x)
             else:
                 x = ELU(alpha=1.0)(x)
             x = Dropout(0.8)(x)
-            x = Dense(1, name='predictions', init='glorot_uniform')(x)
+            x = Dense(1, name='predictions', kernel_initializer='glorot_uniform')(x)
             x = Activation('sigmoid')(x)
             
             classifier = Model(input=extracted_features,
 			       output=x, name='classifier')
-	    fold_best_model_path = best_model_path + 'fold_{}'.format(
+	    fold_best_model_path = best_model_path + 'urfd_fold_{}.h5'.format(
 								fold_number)
 	    classifier.compile(optimizer=adam, loss='binary_crossentropy',
 			       metrics=['accuracy'])
@@ -448,25 +471,26 @@ def main():
 		class_weight = {0: weight_0, 1: 1}
 
 		# callback definition
-		e = EarlyStopping(monitor='val_acc', min_delta=0, patience=100,
+		metric = 'val_loss'
+		e = EarlyStopping(monitor=metric, min_delta=0, patience=100,
 				  mode='auto')
-		c = ModelCheckpoint(fold_best_model_path, monitor='val_acc',
+		c = ModelCheckpoint(fold_best_model_path, monitor=metric,
 				    save_best_only=True,
 				    save_weights_only=False, mode='auto')
 		callbacks = [e, c]
 
 		# Batch training
 		if mini_batch_size == 0:
-			history = classifier.fit(X,_y, 
-						validation_data=(X2,_y2),
-						batch_size=X.shape[0],
+			history = classifier.fit(X_train, y_train, 
+						validation_data=(X_val,y_val),
+						batch_size=X_train.shape[0],
 						nb_epoch=epochs,
 						shuffle='batch',
 						class_weight=class_weight,
 						callbacks=callbacks)
 		else:
-			history = classifier.fit(X,_y,
-						validation_data=(X2,_y2),
+			history = classifier.fit(X_train, y_train, 
+						validation_data=(X_val,y_val),
 						batch_size=mini_batch_size,
 						nb_epoch=epochs,
 						shuffle='batch',
@@ -476,6 +500,26 @@ def main():
 		plot_training_info(plots_folder + exp, ['accuracy', 'loss'],
 				   save_plots, history.history)
 
+		classifier = load_model(fold_best_model_path)
+
+		# Use full training set (training+validation)
+		X_train = np.concatenate((X_train, X_val), axis=0)
+		y_train = np.concatenate((y_train, y_val), axis=0)
+
+		if mini_batch_size == 0:
+			history = classifier.fit(X_train, y_train, 
+						batch_size=X_train.shape[0],
+						nb_epoch=1,
+						shuffle='batch',
+						class_weight=class_weight)
+		else:
+			history = classifier.fit(X_train, y_train, 
+						batch_size=mini_batch_size,
+						nb_epoch=1,
+						shuffle='batch',
+						class_weight=class_weight)
+
+		classifier.save(fold_best_model_path)
             # ==================== EVALUATION ========================     
 	    
 	    # Load best model
