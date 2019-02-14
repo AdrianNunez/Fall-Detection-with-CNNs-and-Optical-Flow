@@ -454,7 +454,8 @@ def main():
             else:
                 x = ELU(alpha=1.0)(x)
             x = Dropout(0.8)(x)
-            x = Dense(1, name='predictions', kernel_initializer='glorot_uniform')(x)
+            x = Dense(1, name='predictions',
+			kernel_initializer='glorot_uniform')(x)
             x = Activation('sigmoid')(x)
             
             classifier = Model(input=extracted_features,
