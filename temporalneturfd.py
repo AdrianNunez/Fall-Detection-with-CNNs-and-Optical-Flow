@@ -365,7 +365,6 @@ def main():
         
         zeroes_full = np.asarray(np.where(_y_full==0)[0])
         ones_full = np.asarray(np.where(_y_full==1)[0])
-	print(len(zeroes_full), len(ones_full))
         zeroes_full.sort()
         ones_full.sort()
         
@@ -406,7 +405,7 @@ def main():
 				  _y_full[ones_full, ...][test_index_nofalls, ...]))   
 
             # Create a validation subset from the training set
-	    val_size = 100#int(X.shape[0]*0.01)
+	    val_size = 100
 	    zeroes = np.asarray(np.where(_y==0)[0])
 	    ones = np.asarray(np.where(_y==1)[0])
 
