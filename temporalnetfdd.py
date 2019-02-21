@@ -23,7 +23,7 @@ from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.model_selection import KFold, StratifiedShuffleSplit
 from keras.layers.advanced_activations import ELU
 
-os.environ["CUDA_VISIBLE_DEVICES"]="2"
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # CHANGE THESE VARIABLES ---
 data_folder = '/home/anunez/FDD_opticalflow/'
@@ -328,16 +328,18 @@ def main():
         X_full = h5features[features_key]
         _y_full = np.asarray(h5labels[labels_key])
             
-        zeroes = np.asarray(np.where(_y_full==0)[0])
-        ones = np.asarray(np.where(_y_full==1)[0])
-        zeroes.sort()
-        ones.sort()
+        zeroes_full = np.asarray(np.where(_y_full==0)[0])
+        ones_full = np.asarray(np.where(_y_full==1)[0])
+        zeroes_full.sort()
+        ones_full.sort()
+        print(len(zeroes_full), len(ones_full))
+	print('=====')
+        # Use a 5 fold cross-validation
+        kf_falls = KFold(n_splits=5, shuffle=True)
+        kf_falls.get_n_splits(X_full[zeroes_full, ...])
         
-        kf_falls = KFold(n_splits=5)
-        kf_falls.get_n_splits(X_full[zeroes, ...])
-        
-        kf_nofalls = KFold(n_splits=5)
-        kf_nofalls.get_n_splits(X_full[ones, ...])        
+        kf_nofalls = KFold(n_splits=5, shuffle=True)
+        kf_nofalls.get_n_splits(X_full[ones_full, ...])             
             
         sensitivities = []
         specificities = []
@@ -348,47 +350,60 @@ def main():
 	# train/test sets
         for ((train_index_falls, test_index_falls),
 	    (train_index_nofalls, test_index_nofalls)) in zip(
-		 kf_falls.split(X_full[zeroes, ...]),
-		 kf_nofalls.split(X_full[ones, ...])
+		 kf_falls.split(X_full[zeroes_full, ...]),
+		 kf_nofalls.split(X_full[ones_full, ...])
 	    ):
 
             train_index_falls = np.asarray(train_index_falls)
             test_index_falls = np.asarray(test_index_falls)
             train_index_nofalls = np.asarray(train_index_nofalls)
             test_index_nofalls = np.asarray(test_index_nofalls)
-            train_index = np.concatenate((train_index_falls,
-					  train_index_nofalls), axis=0)
-            test_index = np.concatenate((test_index_falls,
-					 test_index_nofalls), axis=0)
-            train_index.sort()
-            test_index.sort()
-            X = np.concatenate((X_full[train_index_falls, ...],
-				X_full[train_index_nofalls, ...]))
-            _y = np.concatenate((_y_full[train_index_falls, ...],
-				 _y_full[train_index_nofalls, ...]))
-            X2 = np.concatenate((X_full[test_index_falls, ...],
-				 X_full[test_index_nofalls, ...]))
-            _y2 = np.concatenate((_y_full[test_index_falls, ...],
-				  _y_full[test_index_nofalls, ...])) 
 
-	    # Create a validation subset from the training set
-	    val_size = int(X.shape[0]*0.01)
-	    trainval_split = KFold(n_splits=2)
-            trainval_split.get_n_splits(X_full[zeroes, ...])
-	    trainval_split = StratifiedShuffleSplit(n_splits=1,
-						   test_size=val_size,
+            X = np.concatenate((X_full[zeroes_full, ...][train_index_falls, ...],
+				X_full[ones_full, ...][train_index_nofalls, ...]))
+            _y = np.concatenate((_y_full[zeroes_full, ...][train_index_falls, ...],
+				 _y_full[ones_full, ...][train_index_nofalls, ...]))
+            X2 = np.concatenate((X_full[zeroes_full, ...][test_index_falls, ...],
+				 X_full[ones_full, ...][test_index_nofalls, ...]))
+            _y2 = np.concatenate((_y_full[zeroes_full, ...][test_index_falls, ...],
+				  _y_full[ones_full, ...][test_index_nofalls, ...]))   
+
+            # Create a validation subset from the training set
+	    val_size = 100
+	    zeroes = np.asarray(np.where(_y==0)[0])
+	    ones = np.asarray(np.where(_y==1)[0])
+	    
+	    zeroes.sort()
+	    ones.sort()
+
+	    trainval_split_0 = StratifiedShuffleSplit(n_splits=1,
+						   test_size=val_size/2,
 					 	   random_state=7)
-	    indices = trainval_split.split(X, np.argmax(_y, 1))
-	    train_indices, val_indices = indices.next()
-	    X_train, y_train = X[train_indices], _y[train_indices]
-	    X_val, y_val = X[val_indices], _y[val_indices]
-	    print('Training samples: {}, Validation samples: {}'.format(
-					len(train_indices), len(val_indices)))
-         
+	    indices_0 = trainval_split_0.split(X[zeroes,...],
+					     np.argmax(_y[zeroes,...], 1))
+	    trainval_split_1 = StratifiedShuffleSplit(n_splits=1,
+						   test_size=val_size/2,
+					 	   random_state=7)
+	    indices_1 = trainval_split_1.split(X[ones,...],
+					     np.argmax(_y[ones,...], 1))
+	    train_indices_0, val_indices_0 = indices_0.next()
+	    train_indices_1, val_indices_1 = indices_1.next()
+
+	    X_train = np.concatenate([X[zeroes,...][train_indices_0,...],
+				      X[ones,...][train_indices_1,...]],axis=0)
+	    y_train = np.concatenate([_y[zeroes,...][train_indices_0,...],
+				      _y[ones,...][train_indices_1,...]],axis=0)
+	    X_val = np.concatenate([X[zeroes,...][val_indices_0,...],
+				      X[ones,...][val_indices_1,...]],axis=0)
+	    y_val = np.concatenate([_y[zeroes,...][val_indices_0,...],
+				      _y[ones,...][val_indices_1,...]],axis=0)
+	   
+
             # Balance the number of positive and negative samples so that
 	    # there is the same amount of each of them
             all0 = np.asarray(np.where(y_train==0)[0])
-            all1 = np.asarray(np.where(y_train==1)[0])   
+            all1 = np.asarray(np.where(y_train==1)[0])  
+	    
             if len(all0) < len(all1):
                 all1 = np.random.choice(all1, len(all0), replace=False)
             else:
@@ -397,7 +412,9 @@ def main():
             allin.sort()
             X_train = X_train[allin,...]
             y_train = y_train[allin]
-
+	    
+	    all0 = np.asarray(np.where(y_train==0)[0])
+            all1 = np.asarray(np.where(y_train==1)[0])
 
             # ==================== CLASSIFIER ========================
             extracted_features = Input(shape=(num_features,),

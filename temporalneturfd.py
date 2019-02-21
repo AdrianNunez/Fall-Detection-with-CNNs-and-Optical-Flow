@@ -23,7 +23,7 @@ from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.model_selection import KFold, StratifiedShuffleSplit
 from keras.layers.advanced_activations import ELU
 
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
+os.environ["CUDA_VISIBLE_DEVICES"]="1"
 
 # CHANGE THESE VARIABLES ---
 data_folder = '/home/anunez/URFD_opticalflow/'
@@ -374,7 +374,7 @@ def main():
         
         kf_nofalls = KFold(n_splits=5, shuffle=True)
         kf_nofalls.get_n_splits(X_full[ones_full, ...])        
-        print(X_full[zeroes_full, ...].shape, X_full[ones_full, ...].shape)
+
         sensitivities = []
         specificities = []
         fars = []
@@ -408,35 +408,38 @@ def main():
 	    val_size = 100
 	    zeroes = np.asarray(np.where(_y==0)[0])
 	    ones = np.asarray(np.where(_y==1)[0])
-
+	    
 	    zeroes.sort()
 	    ones.sort()
 
-	    trainval_split = StratifiedShuffleSplit(n_splits=1,
+	    trainval_split_0 = StratifiedShuffleSplit(n_splits=1,
 						   test_size=val_size/2,
 					 	   random_state=7)
-	    indices_0 = trainval_split.split(X[zeroes,...],
+	    indices_0 = trainval_split_0.split(X[zeroes,...],
 					     np.argmax(_y[zeroes,...], 1))
-	    indices_1 = trainval_split.split(X[ones,...],
+	    trainval_split_1 = StratifiedShuffleSplit(n_splits=1,
+						   test_size=val_size/2,
+					 	   random_state=7)
+	    indices_1 = trainval_split_1.split(X[ones,...],
 					     np.argmax(_y[ones,...], 1))
 	    train_indices_0, val_indices_0 = indices_0.next()
 	    train_indices_1, val_indices_1 = indices_1.next()
 
-	    X_train = np.concatenate([X[train_indices_0,...],
-				      X[train_indices_1,...]],axis=0)
-	    y_train = np.concatenate([_y[train_indices_0,...],
-				      _y[train_indices_1,...]],axis=0)
-	    X_val = np.concatenate([X[val_indices_0,...],
-				      X[val_indices_1,...]],axis=0)
-	    y_val = np.concatenate([_y[val_indices_0,...],
-				      _y[val_indices_1,...]],axis=0)
+	    X_train = np.concatenate([X[zeroes,...][train_indices_0,...],
+				      X[ones,...][train_indices_1,...]],axis=0)
+	    y_train = np.concatenate([_y[zeroes,...][train_indices_0,...],
+				      _y[ones,...][train_indices_1,...]],axis=0)
+	    X_val = np.concatenate([X[zeroes,...][val_indices_0,...],
+				      X[ones,...][val_indices_1,...]],axis=0)
+	    y_val = np.concatenate([_y[zeroes,...][val_indices_0,...],
+				      _y[ones,...][val_indices_1,...]],axis=0)
 	   
 
             # Balance the number of positive and negative samples so that
 	    # there is the same amount of each of them
             all0 = np.asarray(np.where(y_train==0)[0])
             all1 = np.asarray(np.where(y_train==1)[0])  
-
+	    
             if len(all0) < len(all1):
                 all1 = np.random.choice(all1, len(all0), replace=False)
             else:
@@ -445,9 +448,10 @@ def main():
             allin.sort()
             X_train = X_train[allin,...]
             y_train = y_train[allin]
+	    
 	    all0 = np.asarray(np.where(y_train==0)[0])
-            all1 = np.asarray(np.where(y_train==1)[0])   
-
+            all1 = np.asarray(np.where(y_train==1)[0])
+	    
             # ==================== CLASSIFIER ========================
             extracted_features = Input(shape=(num_features,),
 				       dtype='float32', name='input')
