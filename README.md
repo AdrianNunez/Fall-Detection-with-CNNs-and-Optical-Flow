@@ -83,11 +83,17 @@ If you have your model already trained, you can load the checkpoints and only do
 
 #### 2. Executing the code
 
-Execute the code by calling:
+Execute the code by calling (depending on the script, change the name):
 
 ```
 python temporalneturfd.py
 ```
+
+Using the saved models submitted here you should obtain these results from the 5-fold cross validation:
+
+Dataset | Sensitivity | Specificity | FAR | MDR | Accuracy
+--- | --- | --- | --- | --- | ---
+**URFD** | 99.67% (-+0.67%) | 98.57% (-+0.56%) | 1.43% (-+0.56%) | 0.33% (-+0.67%) | 98.63% (-+0.52%)
 
 #### A. Reproducing the experiment with different lighting conditions (Section 4.5 of the paper)
 
