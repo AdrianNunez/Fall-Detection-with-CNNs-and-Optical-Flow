@@ -203,7 +203,7 @@ def saveFeatures(feature_extractor,
                 name = not_fall[not_fall.rfind('/')+1:]
                 x_images = glob.glob(not_fall + '/flow_x*.jpg')
                 x_images.sort()
-                y_images = glob.glob(not_fall + '/flow_x*.jpg')
+                y_images = glob.glob(not_fall + '/flow_y*.jpg')
                 y_images.sort()
                 nb_stacks = int(len(x_images))-L+1
                 
